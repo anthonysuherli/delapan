@@ -1,0 +1,187 @@
+# =============================================================================
+# Delapan — tunable runtime config
+#
+# Human-editable knobs for the agent, search/retrieval, and the research
+# pipeline. These are NOT secrets — API keys (and, in the cloud build, Supabase
+# URLs and the JWT secret) live in .env.
+#
+# Precedence (lowest → highest):
+#     built-in defaults  <  this file  <  environment variables
+#
+# Override any value at deploy time with DLP_<SECTION>__<FIELD>, e.g.
+#     DLP_AGENT__TEMPERATURE=0.4
+#     DLP_SEARCH__MIN_SIMILARITY=0.2
+#
+# Point at a different file with DELAPAN_CONFIG_FILE=/path/to/config.yaml.
+# Every value below is optional; delete a key to fall back to its default.
+# =============================================================================
+
+# Chat agent + ReAct loop.
+agent:
+  model: claude-sonnet-4-6          # primary chat model
+  fast_model: claude-haiku-4-5      # reserved for cheap/fast subtasks
+  temperature: 0.2                  # NOTE: forced to 1.0 at runtime when thinking_budget > 0 (Anthropic constraint)
+  max_tokens: 64000                 # per-turn output cap; Sonnet 4.6 sync max is 64k
+  thinking_budget: 12000            # extended-thinking budget tokens; 0 disables. MUST be < max_tokens
+  max_tool_iterations: 4            # max ReAct tool-call rounds per turn
+  max_messages_per_turn: 60         # history window fed to the model
+
+# `explore` recall + shared retrieval thresholds.
+search:
+  default_limit: 20                 # results when the caller omits a limit (doubled)
+  max_limit: 100                    # hard cap on requested results (doubled)
+  min_similarity: 0.0               # match_findings cosine threshold (0–1)
+  max_finding_chunks: 25            # shared hard cap on findings in a preamble # (inert — no longer read; preamble is bounded by tiers.preamble_char_budget)
+
+# Tier model: similarity bands + always-on preamble budget.
+tiers:
+  band1_min: 0.55
+  band2_min: 0.40
+  band3_min: 0.25
+  rich_hit_count: 3
+  preamble_char_budget: 7000
+
+# Per-KB synopsis spine (always-on preamble's stable layer).
+synopsis:
+  model: claude-haiku-4-5
+  rebuild_delta: 15
+  rebuild_max_age_hours: 168
+  max_entries: 6
+
+# Cross-KB user-profile super-entity (the always-on "who is this user" layer).
+# OFF by default — opt-in. When enabled, a stable profile preamble (synopsis of
+# the reserved __user__/profile KB + the user's most-relevant KBs) is injected
+# into every message; relevance is stored in user_kb_relevance.
+user_profile:
+  enabled: true             # master switch — no behavior change until true
+  inject_in_chat: true      # /agent ReAct system prompt
+  inject_in_mcp: true       # Claude Code UserPromptSubmit hook
+  preamble_char_budget: 2000
+  relevance_top_n: 5
+  relevance_sim_weight: 0.6       # weight of profile↔KB topic similarity
+  relevance_activity_weight: 0.4  # weight of recent KB access activity
+  activity_window_days: 30
+
+# `explore` tool (web research pipeline). Models are provider/model strings
+# routed through Vercel AI Gateway (set AI_GATEWAY_API_KEY in .env).
+exploration:
+  # models — AI Gateway slugs use DOTS for versions (anthropic/claude-sonnet-4.6,
+  # not ...-4-6). Run `GET /v1/models` with your key to confirm exact slugs.
+  planner_model: google/gemini-3.5-flash            # plans search queries — cheap work, runs every explore
+  extraction_model: google/gemini-3.1-pro-preview   # extracts findings from pages (cost/quality frontier, 1M ctx)
+  extraction_fallback_model: google/gemini-3.5-flash  # cheap retry model on extraction failure (high volume)
+  temperature: 0.0
+  reasoning_effort: high              # Gemini/gateway thinking level for planning + extraction ("low"|"medium"|"high")
+  # search (Tavily)
+  search_depth: advanced              # "basic" | "advanced"
+  search_mode: auto                   # auto | agent | tavily — "auto" hands off to the calling agent (WebSearch/WebFetch) when no TAVILY_API_KEY is set
+  max_results_per_query: 40           # (doubled)
+  fallback_result_threshold: 10       # skip priority-2 queries once P1 yields >= this (doubled)
+  expansion_result_threshold: 6       # skip priority-3 queries once results >= this (doubled)
+  # crawl / extract (Tavily extract)
+  max_pages: 30                       # cap on URLs fetched for content (doubled)
+  max_concurrent_extractions: 20      # (doubled)
+  max_content_per_page: 200000        # char cap fed to the extractor LLM (doubled)
+  # merge
+  fuzzy_match_threshold: 0.80
+  min_confidence_threshold: 0.2
+  # persistence cap
+  default_max_findings: 24            # (doubled)
+  max_findings: 80                    # (doubled)
+
+# Per-phase narration: a cheap, best-effort gateway line ("Reading 12 source
+# pages…") emitted alongside each pipeline phase. Runs concurrently with real
+# work so it adds no latency; any failure yields "" and is swallowed. Model uses
+# an AI Gateway dot slug; keep it cheap/fast (it fires once per phase).
+narration:
+  enabled: true
+  model: google/gemini-2.5-flash   # cheap, fast narrator; gateway dot-slug
+  temperature: 0.3
+  max_tokens: 60
+
+# Autonomous gap-following deep-research (`deepen`): an LLM critic steers next
+# facets; depth_cap + a coverage floor terminate. Models use AI Gateway dot slugs.
+deepen:
+  depth_cap: 3              # hard max rounds (runaway backstop; not disable-able)
+  min_rounds: 1             # never stop before this many rounds
+  coverage_target: 0.8      # critic coverage at/above which the loop may stop
+  facets_per_round: 4       # cap on next-round facets proposed by the critic
+  max_concurrent_facets: 4  # outer fan-out semaphore (× per-explore extraction cap)
+  decompose_model: anthropic/claude-sonnet-4.6
+  critic_model: anthropic/claude-sonnet-4.6
+  temperature: 0.0
+  reasoning_effort: null
+
+# Embedding client + file-ingest chunking.
+embedding:
+  model: text-embedding-3-small
+  dim: 1536                         # informational; pgvector column is fixed
+  input_char_cap: 8192             # per-string truncation before embedding
+  chunk_max_chars: 1800             # ingest chunker target size
+
+# KG build — extract entities/relations from findings into kg_nodes/kg_edges.
+# Models are AI Gateway slugs (DOTS for versions), like `exploration`.
+knowledge_graph:
+  extraction_model: anthropic/claude-opus-4.8       # the KG is the trust artifact — best factuality + structured extraction; low-frequency full-rebuild so cost is bounded
+  extraction_fallback_model: google/gemini-3.1-pro-preview  # fall back to frontier, not flash — the graph is too important to retry cheap
+  temperature: 0.0
+  max_findings: 200                 # cap on findings fed to one extraction pass (raised)
+  max_finding_chars: 1200           # per-finding content truncation in the prompt
+  node_match_threshold: 0.86        # cosine sim above which an entity dedupes to an existing node
+  max_nodes: 400                    # safety cap on nodes upserted per build
+  max_edges: 1200                   # safety cap on edges upserted per build
+  reasoning_effort: null            # Opus 4.8 rejects the gateway's reasoning_effort param (maps to thinking.type.enabled); it thinks adaptively by default. Gemini fallback runs at provider default.
+
+# Domain-concept (glossary) extraction. Mines terms-of-art from findings into
+# kb_concepts. Gateway slugs use DOTS (pipeline path).
+concepts:
+  extract_model: anthropic/claude-sonnet-4.6   # one free-form pass over findings → {term, definition}
+  max_findings_context: 60          # findings fed to the extraction pass
+  max_finding_chars: 1200           # per-finding content truncation in the prompt
+  max_terms: 40                     # cap on concepts persisted per extract run
+
+# Agent system prompt + per-tool descriptions surfaced to the LLM.
+# Omit `system_prompt` / individual tool keys to keep the in-code defaults.
+prompts:
+  system_prompt: |
+    You are Delapan — an agent that helps the user grow a knowledge base.
+
+    You have a set of tools that operate against the user's active KB. When the
+    user expresses intent that maps to a tool, call it. Otherwise reply
+    conversationally.
+
+    When a tool runs, narrate briefly what happened (don't restate the full
+    result; the UI shows tool cards inline).
+
+    Your messages already include a <preamble> of current KB context (a synopsis
+    plus query-relevant findings) and a coverage verdict; consult it before
+    calling explore.
+
+    Available tools and when to use them:
+      - explore(query, mode): research/recall the KB. mode=auto (KB first, web if
+        thin), recall (KB-only), research (force web). Findings persist to the KB.
+      - ingest_file(upload_id): process an uploaded file (PDF / MD / TXT)
+      - kg_view(focus?): open the knowledge graph viewer
+      - deploy_kb(): publish the KB as a context API, mint an API key
+
+    Be concise. Use markdown sparingly.
+  tool_descriptions:
+    explore: >-
+      Unified knowledge tool. mode=auto: search the KB first and only research the
+      web if coverage is thin; recall: KB-only semantic search (no web); research:
+      force the full web research pipeline. depth controls breadth. New findings
+      persist to the active KB. Use whenever the user wants to look something up,
+      learn, or research a topic.
+    ingest_file: >-
+      Process an uploaded file (PDF / MD / TXT) — extract text, chunk into
+      findings, embed, and persist to the knowledge base.
+    kg_view: Open the knowledge graph viewer. Optionally focus on a concept.
+    deploy_kb: >-
+      Publish the active KB as a context API. Flips published=true, mints a new
+      API key, and returns the key (shown to the user once).
+    deepen: >-
+      Autonomous, gap-following deep research: decompose a topic into facets,
+      research them in parallel, judge remaining gaps, and loop until coverage is
+      sufficient or a depth cap is hit. Returns a run_id immediately; poll deepen
+      status for progress. Use for thorough, multi-round research where the user
+      cedes per-facet control.
