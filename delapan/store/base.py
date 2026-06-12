@@ -276,3 +276,20 @@ class Store(Protocol):
     ) -> None:
         """Append access events. Best-effort by contract — must never raise."""
         ...
+
+    # --- resolution event log (memory write decisions) -----------------------
+    # Append-only observability for the mem0-style resolver: one row per applied
+    # decision (ADD/UPDATE/NOOP/DELETE). Never load-bearing for retrieval.
+
+    async def insert_resolution_events(self, kb_id: str, events: list[dict]) -> None:
+        """Append resolution decision rows. Best-effort by contract.
+
+        Each row carries ``op, candidate_title, target_finding_id, reason``;
+        ``op`` is one of ADD/UPDATE/NOOP/DELETE. No-op on an empty list."""
+        ...
+
+    def list_resolution_events(self, kb_id: str, limit: int | None = None) -> list[dict]:
+        """Most-recent resolution events in ``kb_id`` (newest first). Rows carry
+        ``id, op, candidate_title, target_finding_id, reason, created_at``.
+        ``limit`` defaults to 50; hard-capped at 500."""
+        ...
