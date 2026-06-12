@@ -363,6 +363,21 @@ class ConceptsConfig(BaseModel):
     max_terms: int = 40  # cap on concepts persisted per extract run
 
 
+class MemoryConfig(BaseModel):
+    """mem0-style finding resolution: decide ADD/UPDATE/NOOP/DELETE per candidate
+    against the top-k existing findings before persisting. Disabled → pure ADD
+    (today's append behavior). Models are AI Gateway slugs (dots for versions)."""
+
+    enabled: bool = True  # kill-switch: false → pure ADD, no resolver call
+    resolution_model: str = "anthropic/claude-sonnet-4.6"
+    resolution_fallback_model: str = "openai/gpt-5.4-mini"
+    temperature: float = 0.0
+    neighbor_top_k: int = 5  # existing findings retrieved per candidate
+    neighbor_min_similarity: float = 0.6  # floor for a neighbor to be considered
+    max_candidates_per_pass: int = 25  # batch cap for one LLM resolution pass
+    reasoning_effort: str | None = None  # gateway/Gemini thinking level
+
+
 class PromptsConfig(BaseModel):
     """Agent system prompt + per-tool descriptions surfaced to the LLM."""
 
@@ -385,6 +400,7 @@ class AppConfig(BaseModel):
     deepen: DeepenConfig = Field(default_factory=DeepenConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     knowledge_graph: KnowledgeGraphConfig = Field(default_factory=KnowledgeGraphConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
     concepts: ConceptsConfig = Field(default_factory=ConceptsConfig)
     prompts: PromptsConfig = Field(default_factory=PromptsConfig)
 
