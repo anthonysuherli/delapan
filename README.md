@@ -16,7 +16,8 @@ pip install "delapan[local]"
 # MCP server for Claude Code / any MCP client (resume, search, explore, projects)
 python -m delapan.mcp.server
 
-# or a loopback HTTP API on 127.0.0.1 (currently /health)
+# or a loopback HTTP API on 127.0.0.1 (health, projects, KG read/write,
+# findings, synopsis, resume, explore-over-SSE under /api/*)
 python -m delapan.api.main
 ```
 
@@ -38,9 +39,9 @@ The local tier stores everything in `~/.delapan/delapan.db` (override with
 `DELAPAN_DB_PATH`). No Supabase, no API key, loopback-only.
 
 > **Status:** the engine core (grounding, exploration, findings, KB/project
-> persistence), the `Store` seam, and the MCP server all run on SQLite today.
-> The capture/resume/explore HTTP routes are the next surface — see
-> [Roadmap](#status--roadmap).
+> persistence), the `Store` seam, the MCP server, and the local HTTP API
+> (`/api/*` — mirrors the MCP surface plus KG read/write for a control-panel
+> frontend) all run on SQLite today — see [Roadmap](#status--roadmap).
 
 ## What's inside
 
@@ -93,11 +94,14 @@ pytest && ruff check .
 - The engine core — `agent` (preamble/synopsis/resume), `exploration`, `findings`, `kbs`, `projects`, `knowledge_graph` models.
 - The tenancy gateway — `resolve_tenant()` resolves a local tenant through the store.
 - The MCP server — `delapan_resume` / `delapan_search` / `delapan_explore` / `delapan_projects` (whole package imports; all 4 tools register and run).
-- `python -m delapan.api.main` → `/health`.
+- `python -m delapan.api.main` → `/health` plus the `/api/*` surface: projects,
+  per-KB graph read/write (nodes/edges CRUD, stats, schema), findings
+  list/get/delete, synopsis, resume, and explore over SSE. CORS allows the
+  control-panel dev origins (`:5173`); `scripts/seed_demo_kb.py` seeds a
+  credential-free demo KB to point a frontend at.
 
 **Next:**
-- The capture / resume / explore HTTP routes (mirror the MCP tools over FastAPI).
-- A test suite (port the SQLite store tests).
+- The capture HTTP route (mirror the remaining MCP-adjacent surface over FastAPI).
 - Concepts, drift, deepen, bridges, monitoring, user-profile, research reports, and the broader MCP tool surface.
 - Store-route or gate the remaining cloud-coupled surfaces (`userprofile`, generic `knowledge_graph/builder`) — currently `[cloud]`-gated at call-time.
 

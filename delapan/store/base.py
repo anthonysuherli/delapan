@@ -138,11 +138,24 @@ class Store(Protocol):
         properties: dict,
         grounded_in: list[str] | None = None,
         embedding: list[float] | None = None,
+        label: str | None = None,
+        type: str | None = None,
     ) -> None:
         """Overwrite a node's payload (unlike upsert_kg_nodes, which merges with
         existing-wins). `properties` replaces wholesale; `grounded_in` replaces when
-        given; `embedding` re-indexes the vector when given. Used to re-distill a
-        concept's body/confidence/version in place."""
+        given; `embedding` re-indexes the vector when given; `label`/`type` rename
+        the node when given (the dedupe key changes — re-embedding is optional).
+        Used to re-distill a concept's body/confidence/version in place."""
+        ...
+
+    def delete_kg_node(self, kb_id: str, node_id: str) -> dict:
+        """Delete one node from `kb_id` plus its vector row and every incident
+        edge. Returns ``{"deleted": bool, "removed_edge_ids": [...]}`` — deleted
+        is False (with no edge ids) when the node is absent."""
+        ...
+
+    def delete_kg_edge(self, kb_id: str, edge_id: str) -> dict:
+        """Delete one edge from `kb_id`. Returns ``{"deleted": bool}``."""
         ...
 
     async def match_kg_nodes(
@@ -180,8 +193,9 @@ class Store(Protocol):
 
     def get_kg_node(self, kb_id: str, node_id: str) -> dict | None:
         """One node by id within `kb_id`, or None. Row carries the full decoded
-        ``id, type, label, properties, grounded_in`` — the authoritative read for
-        re-distilling a concept in place (versus a capped, recency-windowed list)."""
+        ``id, type, label, properties, grounded_in, created_at`` — the authoritative
+        read for re-distilling a concept in place (versus a capped, recency-windowed
+        list)."""
         ...
 
     def kg_stats(self, kb_id: str) -> dict:

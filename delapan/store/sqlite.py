@@ -608,23 +608,29 @@ class SQLiteStore:
         properties: dict,
         grounded_in: list[str] | None = None,
         embedding: list[float] | None = None,
+        label: str | None = None,
+        type: str | None = None,
     ) -> None:
-        """Overwrite payload in place (no merge). Re-indexes the vector if given."""
+        """Overwrite payload in place (no merge). Re-indexes the vector if given.
+
+        `label`/`type` rename the node when given — the ``(type, label)`` dedupe
+        key changes with the row, and re-embedding is optional (pass `embedding`
+        to refresh the vector; skipping it keeps the stale-but-usable one)."""
+        sets = ["properties = ?"]
+        vals: list[object] = [json.dumps(properties)]
         if grounded_in is not None:
-            self._conn.execute(
-                "UPDATE kg_nodes SET properties = ?, grounded_in = ? WHERE id = ? AND kb_id = ?;",
-                (
-                    json.dumps(properties),
-                    json.dumps(list(grounded_in)[-_MAX_GROUNDED:]),
-                    node_id,
-                    kb_id,
-                ),
-            )
-        else:
-            self._conn.execute(
-                "UPDATE kg_nodes SET properties = ? WHERE id = ? AND kb_id = ?;",
-                (json.dumps(properties), node_id, kb_id),
-            )
+            sets.append("grounded_in = ?")
+            vals.append(json.dumps(list(grounded_in)[-_MAX_GROUNDED:]))
+        if label is not None:
+            sets.append("label = ?")
+            vals.append(label)
+        if type is not None:
+            sets.append("type = ?")
+            vals.append(type)
+        self._conn.execute(
+            f"UPDATE kg_nodes SET {', '.join(sets)} WHERE id = ? AND kb_id = ?;",
+            (*vals, node_id, kb_id),
+        )
         if embedding is not None:
             self._conn.execute("DELETE FROM vec_kg_nodes WHERE node_id = ?;", (node_id,))
             self._conn.execute(
@@ -632,6 +638,40 @@ class SQLiteStore:
                 (node_id, serialize_float32(list(embedding))),
             )
         self._conn.commit()
+
+    def delete_kg_node(self, kb_id: str, node_id: str) -> dict:
+        """Delete one node + its vec row + every incident edge (both directions).
+
+        Returns ``{"deleted": bool, "removed_edge_ids": [...]}``; absent node →
+        ``deleted=False`` and nothing is touched."""
+        exists = self._conn.execute(
+            "SELECT 1 FROM kg_nodes WHERE id = ? AND kb_id = ? LIMIT 1;", (node_id, kb_id)
+        ).fetchone()
+        if exists is None:
+            return {"deleted": False, "removed_edge_ids": []}
+        edge_ids = [
+            r["id"]
+            for r in self._conn.execute(
+                "SELECT id FROM kg_edges WHERE kb_id = ? "
+                "AND (source_node_id = ? OR target_node_id = ?);",
+                (kb_id, node_id, node_id),
+            ).fetchall()
+        ]
+        if edge_ids:
+            ph = ",".join("?" for _ in edge_ids)
+            self._conn.execute(f"DELETE FROM kg_edges WHERE id IN ({ph});", edge_ids)
+        self._conn.execute("DELETE FROM vec_kg_nodes WHERE node_id = ?;", (node_id,))
+        self._conn.execute("DELETE FROM kg_nodes WHERE id = ? AND kb_id = ?;", (node_id, kb_id))
+        self._conn.commit()
+        return {"deleted": True, "removed_edge_ids": edge_ids}
+
+    def delete_kg_edge(self, kb_id: str, edge_id: str) -> dict:
+        """Delete one edge scoped to `kb_id`. Returns ``{"deleted": bool}``."""
+        cur = self._conn.execute(
+            "DELETE FROM kg_edges WHERE id = ? AND kb_id = ?;", (edge_id, kb_id)
+        )
+        self._conn.commit()
+        return {"deleted": cur.rowcount > 0}
 
     async def upsert_kg_edges(self, kb_id: str, edges: list[dict]) -> int:
         """Insert edges, skipping self-loops, dangling ids, and existing
@@ -733,7 +773,8 @@ class SQLiteStore:
                 visited_frontiers.update(to_expand)
                 ph = ",".join("?" for _ in to_expand)
                 hop_rows = self._conn.execute(
-                    f"SELECT id, source_node_id, target_node_id, relation, properties, grounded_in "
+                    f"SELECT id, source_node_id, target_node_id, relation, properties, "
+                    f"grounded_in, created_at "
                     f"FROM kg_edges WHERE kb_id = ? "
                     f"AND (source_node_id IN ({ph}) OR target_node_id IN ({ph})) LIMIT ?;",
                     (kb_id, *to_expand, *to_expand, edge_cap),
@@ -756,7 +797,7 @@ class SQLiteStore:
             nph = ",".join("?" for _ in wanted)
             node_rows = (
                 self._conn.execute(
-                    f"SELECT id, type, label, properties FROM kg_nodes "
+                    f"SELECT id, type, label, properties, grounded_in, created_at FROM kg_nodes "
                     f"WHERE kb_id = ? AND id IN ({nph});",
                     (kb_id, *wanted),
                 ).fetchall()
@@ -766,11 +807,13 @@ class SQLiteStore:
             edge_rows = all_edge_rows[:edge_cap]
         else:
             node_rows = self._conn.execute(
-                "SELECT id, type, label, properties FROM kg_nodes WHERE kb_id = ? LIMIT ?;",
+                "SELECT id, type, label, properties, grounded_in, created_at "
+                "FROM kg_nodes WHERE kb_id = ? LIMIT ?;",
                 (kb_id, node_cap),
             ).fetchall()
             edge_rows = self._conn.execute(
-                "SELECT id, source_node_id, target_node_id, relation, properties, grounded_in "
+                "SELECT id, source_node_id, target_node_id, relation, properties, "
+                "grounded_in, created_at "
                 "FROM kg_edges WHERE kb_id = ? LIMIT ?;",
                 (kb_id, edge_cap),
             ).fetchall()
@@ -780,6 +823,8 @@ class SQLiteStore:
                 "type": r["type"],
                 "label": r["label"],
                 "properties": _json_load(r["properties"], {}),
+                "grounded_in": _json_load(r["grounded_in"], []),
+                "created_at": r["created_at"],
             }
             for r in node_rows
         ]
@@ -790,6 +835,8 @@ class SQLiteStore:
                 "target_node_id": r["target_node_id"],
                 "relation": r["relation"],
                 "properties": _json_load(r["properties"], {}),
+                "grounded_in": _json_load(r["grounded_in"], []),
+                "created_at": r["created_at"],
             }
             for r in edge_rows
         ]
@@ -825,7 +872,7 @@ class SQLiteStore:
         authoritative read for re-distilling a concept (unlike list_kg_nodes,
         which is capped + recency-windowed and can miss an older target)."""
         r = self._conn.execute(
-            "SELECT id, type, label, properties, grounded_in "
+            "SELECT id, type, label, properties, grounded_in, created_at "
             "FROM kg_nodes WHERE id = ? AND kb_id = ? LIMIT 1;",
             (node_id, kb_id),
         ).fetchone()
@@ -837,6 +884,7 @@ class SQLiteStore:
             "label": r["label"],
             "properties": _json_load(r["properties"], {}),
             "grounded_in": _json_load(r["grounded_in"], []),
+            "created_at": r["created_at"],
         }
 
     def clear_kg(self, kb_id: str) -> None:
