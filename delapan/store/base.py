@@ -43,6 +43,23 @@ class Store(Protocol):
         """Insert already-embedded finding rows; return the new ids in order."""
         ...
 
+    async def update_finding(
+        self,
+        kb_id: str,
+        finding_id: str,
+        *,
+        content,
+        confidence,
+        provenance,
+        embedding,
+        title: str | None = None,
+    ) -> None:
+        """Overwrite a finding in place, keeping its id STABLE (so KG `grounded_in`
+        references stay valid). Replaces content/confidence/provenance and
+        re-indexes the embedding; renames the title when given. The caller computes
+        the merged values — this is a straight overwrite, not a merge."""
+        ...
+
     def get_finding(self, kb_id: str, finding_id: str) -> dict:
         """One finding scoped to `kb_id`. Raises if not found."""
         ...

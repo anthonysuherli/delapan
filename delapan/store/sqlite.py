@@ -289,6 +289,40 @@ class SQLiteStore:
         self._conn.commit()
         return ids
 
+    async def update_finding(
+        self,
+        kb_id: str,
+        finding_id: str,
+        *,
+        content,
+        confidence,
+        provenance,
+        embedding,
+        title: str | None = None,
+    ) -> None:
+        """In-place overwrite + re-embed; id stays stable. JSON-encodes content/
+        provenance; replaces the ``vec_findings`` row when an embedding is given."""
+        sets = ["content = ?", "confidence = ?", "provenance = ?"]
+        vals: list[object] = [
+            _json_dump_maybe(content),
+            confidence,
+            json.dumps(list(provenance or [])),
+        ]
+        if title is not None:
+            sets.append("title = ?")
+            vals.append(title)
+        self._conn.execute(
+            f"UPDATE findings SET {', '.join(sets)} WHERE id = ? AND kb_id = ?;",
+            (*vals, finding_id, kb_id),
+        )
+        if embedding is not None:
+            self._conn.execute("DELETE FROM vec_findings WHERE finding_id = ?;", (finding_id,))
+            self._conn.execute(
+                "INSERT INTO vec_findings (finding_id, embedding) VALUES (?, ?);",
+                (finding_id, serialize_float32(list(embedding))),
+            )
+        self._conn.commit()
+
     def get_finding(self, kb_id: str, finding_id: str) -> dict:
         """One finding scoped to `kb_id`. Raises if absent. JSON cols decoded."""
         r = self._conn.execute(

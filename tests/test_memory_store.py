@@ -29,3 +29,45 @@ async def test_resolution_events_scoped_by_kb(store):
     await store.insert_resolution_events(kb1, [{"op": "ADD", "candidate_title": "A", "reason": ""}])
     assert len(store.list_resolution_events(kb1)) == 1
     assert store.list_resolution_events(kb2) == []
+
+
+@pytest.mark.asyncio
+async def test_update_finding_in_place_keeps_id(store):
+    org, pid = store.resolve_project("updA", create=True)
+    kb = store.resolve_kb(org, pid, "main", create=True)
+    emb0 = [0.01] * 1536
+    ids = await store.insert_findings(
+        [
+            {
+                "org_id": org,
+                "kb_id": kb,
+                "title": "old",
+                "content": {"k": "v0"},
+                "category": "fact",
+                "confidence": 0.4,
+                "tags": [],
+                "provenance": [{"url": "a"}],
+                "embedding": emb0,
+            }
+        ]
+    )
+    fid = ids[0]
+    emb1 = [0.5] * 1536
+    await store.update_finding(
+        kb,
+        fid,
+        content={"k": "v1"},
+        confidence=0.8,
+        provenance=[{"url": "a"}, {"url": "b"}],
+        embedding=emb1,
+        title="new",
+    )
+    got = store.get_finding(kb, fid)
+    assert got["id"] == fid                 # id is stable
+    assert got["title"] == "new"
+    assert got["confidence"] == 0.8
+    assert got["content"] == {"k": "v1"}    # dict content round-trips
+    assert len(got["provenance"]) == 2
+    assert store.count_findings(kb) == 1    # overwrite, not a new row
+    hits = await store.match_findings(kb, emb1, match_count=1, min_similarity=0.0)
+    assert hits[0]["id"] == fid             # vector re-indexed to emb1
