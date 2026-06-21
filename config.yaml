@@ -99,6 +99,14 @@ narration:
   temperature: 0.3
   max_tokens: 60
 
+# OKF concept-doc synthesis: one gateway pass that rewrites an entity's grounded
+# findings into a readable prose document — the reader's "synthesize" action.
+# Prose quality matters here, so this is NOT the cheap narration model.
+okf:
+  model: anthropic/claude-sonnet-4.6   # gateway dot-slug
+  temperature: 0.3
+  max_tokens: 900
+
 # Autonomous gap-following deep-research (`deepen`): an LLM critic steers next
 # facets; depth_cap + a coverage floor terminate. Models use AI Gateway dot slugs.
 deepen:
@@ -114,7 +122,7 @@ deepen:
 
 # Embedding client + file-ingest chunking.
 embedding:
-  model: text-embedding-3-small
+  model: google/gemini-embedding-001   # via AI Gateway (OpenAI-compatible); 1536 dims pinned in client
   dim: 1536                         # informational; pgvector column is fixed
   input_char_cap: 8192             # per-string truncation before embedding
   chunk_max_chars: 1800             # ingest chunker target size

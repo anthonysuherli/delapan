@@ -297,6 +297,16 @@ class NarrationConfig(BaseModel):
     max_tokens: int = 60
 
 
+class OKFConfig(BaseModel):
+    """OKF concept-doc synthesis: one gateway pass that rewrites an entity's
+    grounded findings into a readable prose document. Model is an AI Gateway
+    dot slug."""
+
+    model: str = "anthropic/claude-sonnet-4.6"
+    temperature: float = 0.3
+    max_tokens: int = 900
+
+
 class DeepenConfig(BaseModel):
     """Autonomous gap-following deep-research (`deepen`) knobs.
 
@@ -382,6 +392,7 @@ class AppConfig(BaseModel):
     user_profile: UserProfileConfig = Field(default_factory=UserProfileConfig)
     exploration: ExplorationConfig = Field(default_factory=ExplorationConfig)
     narration: NarrationConfig = Field(default_factory=NarrationConfig)
+    okf: OKFConfig = Field(default_factory=OKFConfig)
     deepen: DeepenConfig = Field(default_factory=DeepenConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     knowledge_graph: KnowledgeGraphConfig = Field(default_factory=KnowledgeGraphConfig)
