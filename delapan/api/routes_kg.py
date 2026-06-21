@@ -19,9 +19,11 @@ Node-create embeddings are best-effort: no OPENAI_API_KEY → insert unembedded.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from delapan.api.deps import resolve_kb_or_404
+from delapan.core.agent.concept_doc import synthesize_concept_doc
 from delapan.core.clients.embeddings import embed_batch
 from delapan.core.config import get_settings
 from delapan.core.knowledge_graph.service import kg_schema_view, read_graph
@@ -157,6 +159,18 @@ def delete_node(project: str, kb: str, node_id: str) -> dict:
     if not result.get("deleted"):
         raise HTTPException(status_code=404, detail=f"node not found: {node_id}")
     return result
+
+
+@router.post("/nodes/{node_id}/concept-doc")
+async def concept_doc(project: str, kb: str, node_id: str) -> JSONResponse:
+    if not get_settings().ai_gateway_api_key:
+        return JSONResponse(status_code=503, content={"error": "llm unavailable"})
+    ctx, store = resolve_kb_or_404(project, kb)
+    try:
+        doc = await synthesize_concept_doc(store, ctx.kb_id, node_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=f"node not found: {node_id}") from exc
+    return JSONResponse(doc)
 
 
 # --- edge mutations ----------------------------------------------------------
