@@ -170,6 +170,11 @@ async def concept_doc(project: str, kb: str, node_id: str) -> JSONResponse:
         doc = await synthesize_concept_doc(store, ctx.kb_id, node_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=f"node not found: {node_id}") from exc
+    except Exception:  # noqa: BLE001 — gateway/LLM failure (402/429/5xx, timeout)
+        # Return a clean 503 the SPA already handles (toast + stay in deterministic
+        # mode). An uncaught 500 would lack CORS headers, so the browser reads it
+        # as a network error and flips the whole panel to offline mock data.
+        return JSONResponse(status_code=503, content={"error": "llm unavailable"})
     return JSONResponse(doc)
 
 

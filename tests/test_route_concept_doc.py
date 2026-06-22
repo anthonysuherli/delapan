@@ -45,3 +45,22 @@ def test_concept_doc_404(monkeypatch):
     monkeypatch.setattr(routes_kg, "synthesize_concept_doc", fake_synth)
     res = TestClient(app).post(URL)
     assert res.status_code == 404
+
+
+def test_concept_doc_503_on_gateway_error(monkeypatch):
+    """A gateway/LLM failure (e.g. 402 insufficient_funds, 429, 5xx) must return
+    a clean 503 — not bubble as an uncaught 500, whose missing CORS headers flip
+    the SPA to offline mock mode."""
+    monkeypatch.setattr(routes_kg, "get_settings", lambda: SimpleNamespace(ai_gateway_api_key="k"))
+    monkeypatch.setattr(
+        routes_kg, "resolve_kb_or_404",
+        lambda project, kb: (SimpleNamespace(kb_id="kb", org_id="o"), object()),
+    )
+
+    async def fake_synth(store, kb_id, node_id):
+        raise RuntimeError("Error code: 402 - insufficient_funds")
+
+    monkeypatch.setattr(routes_kg, "synthesize_concept_doc", fake_synth)
+    res = TestClient(app).post(URL)
+    assert res.status_code == 503
+    assert res.json() == {"error": "llm unavailable"}
