@@ -41,7 +41,10 @@ def grounded_hash(ids: list[str]) -> str:
 
 
 def _finding_brief(f: dict) -> str:
-    return f"- {f.get('title', '')}: {f.get('content', '')}"
+    content = f.get("content", "")
+    if isinstance(content, dict):
+        content = "; ".join(str(v) for v in content.values() if v)
+    return f"- {f.get('title', '')}: {content}"
 
 
 async def synthesize_concept_doc(store: Store, kb_id: str, node_id: str) -> dict:

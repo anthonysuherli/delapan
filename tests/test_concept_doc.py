@@ -24,7 +24,10 @@ class _FakeStore:
 
 @pytest.mark.asyncio
 async def test_synthesize_shape(monkeypatch):
+    captured_user = {}
+
     async def fake_completion(**kwargs):
+        captured_user["prompt"] = kwargs.get("user", "")
         return "The unearned profit under IFRS 17.\n---\n## Overview\nThe CSM defers gains."
 
     monkeypatch.setattr(concept_doc, "text_completion", fake_completion)
@@ -36,6 +39,9 @@ async def test_synthesize_shape(monkeypatch):
     assert doc["grounded_hash"] == concept_doc.grounded_hash(["f1"])
     assert doc["model"]  # came from config
     assert doc["built_at"]
+    # content dict must appear as readable text, not Python repr
+    assert "deferred to P&L" in captured_user["prompt"]
+    assert "{'fact'" not in captured_user["prompt"]
 
 
 @pytest.mark.asyncio
