@@ -58,6 +58,23 @@ _FINDING_COLS = (
 )
 _FINDING_LIST_COLS = ("id", "title", "category", "confidence", "tags", "created_at")
 # match_findings returns the full finding minus created_at, plus a computed similarity.
+
+
+def _finding_from_row(r) -> dict:
+    """Map a findings row (selected via _FINDING_COLS) to the wire dict."""
+    return {
+        "id": r["id"],
+        "title": r["title"],
+        # content is either a JSON dict (extractor round-trip) or a plain
+        # markdown string (some ingests). Fall back to the raw string when it
+        # isn't JSON — never drop a non-JSON body to ``{}``.
+        "content": _json_load(r["content"], r["content"]),
+        "category": r["category"],
+        "confidence": r["confidence"],
+        "tags": _json_load(r["tags"], []),
+        "provenance": _json_load(r["provenance"], []),
+        "created_at": r["created_at"],
+    }
 _FINDING_MATCH_COLS = ("id", "title", "content", "category", "confidence", "tags", "provenance")
 
 LIST_DEFAULT_LIMIT = 20
@@ -229,7 +246,8 @@ class SQLiteStore:
                 {
                     "id": r["id"],
                     "title": r["title"],
-                    "content": _json_load(r["content"], {}),
+                    # see _finding_from_row: raw-string fall back, not ``{}``.
+                    "content": _json_load(r["content"], r["content"]),
                     "category": r["category"],
                     "confidence": r["confidence"],
                     "tags": _json_load(r["tags"], []),
@@ -289,16 +307,21 @@ class SQLiteStore:
         ).fetchone()
         if r is None:
             raise RuntimeError("finding not found")
-        return {
-            "id": r["id"],
-            "title": r["title"],
-            "content": _json_load(r["content"], {}),
-            "category": r["category"],
-            "confidence": r["confidence"],
-            "tags": _json_load(r["tags"], []),
-            "provenance": _json_load(r["provenance"], []),
-            "created_at": r["created_at"],
-        }
+        return _finding_from_row(r)
+
+    def get_finding_global(self, finding_id: str) -> dict:
+        """One finding by global id (PK), ignoring KB scope. Raises if absent.
+
+        ``findings.id`` is globally unique, so this resolves cross-KB
+        ``grounded_in`` citations — e.g. a unified graph whose nodes/edges cite
+        findings owned by the source KBs they were merged from."""
+        r = self._conn.execute(
+            f"SELECT {', '.join(_FINDING_COLS)} FROM findings WHERE id = ? LIMIT 1;",
+            (finding_id,),
+        ).fetchone()
+        if r is None:
+            raise RuntimeError("finding not found")
+        return _finding_from_row(r)
 
     def list_findings(
         self, kb_id: str, category: str | None = None, limit: int | None = None
