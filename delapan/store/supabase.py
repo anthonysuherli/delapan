@@ -279,3 +279,125 @@ class SupabaseStore:
         data = await asyncio.to_thread(
             lambda: self._c.rpc("match_kg_nodes", params).execute().data)
         return data or []
+
+    # --- KG write ------------------------------------------------------------
+
+    async def upsert_kg_nodes(self, kb_id: str, nodes: list[dict]) -> list[str]:
+        if not nodes:
+            return []
+        return await asyncio.to_thread(self._upsert_kg_nodes_sync, kb_id, nodes)
+
+    def _upsert_kg_nodes_sync(self, kb_id: str, nodes: list[dict]) -> list[str]:
+        ids: list[str] = []
+        batch: dict[tuple[str, str], str] = {}
+        for nd in nodes:
+            typ, label = nd.get("type") or "", nd.get("label") or ""
+            props = dict(nd.get("properties") or {})
+            grounded = list(nd.get("grounded_in") or [])
+            key = (typ, label)
+            if key in batch:
+                self._merge_node(batch[key], props, grounded)
+                ids.append(batch[key])
+                continue
+            existing = (self._c.table("kg_nodes").select("id")
+                        .eq("kb_id", kb_id).eq("type", typ).eq("label", label)
+                        .limit(1).execute().data)
+            if existing:
+                nid = existing[0]["id"]
+                self._merge_node(nid, props, grounded)
+            else:
+                nid = uuid.uuid4().hex
+                row: dict = {"id": nid, "org_id": self._org_id, "kb_id": kb_id, "type": typ,
+                             "label": label, "properties": props,
+                             "grounded_in": grounded[-_MAX_GROUNDED:], "aliases": [],
+                             "merge_history": [], "created_at": _now_iso()}
+                emb = nd.get("embedding")
+                if emb is not None:
+                    row["embedding"] = self._vec(list(emb))
+                self._c.table("kg_nodes").insert(row).execute()
+            batch[key] = nid
+            ids.append(nid)
+        return ids
+
+    def _merge_node(self, node_id: str, props: dict, grounded: list[str]) -> None:
+        rows = (self._c.table("kg_nodes").select("properties,grounded_in")
+                .eq("id", node_id).limit(1).execute().data)
+        if not rows:
+            return
+        ex_props = rows[0].get("properties") or {}
+        ex_grounded = rows[0].get("grounded_in") or []
+        merged_props = {**props, **ex_props}
+        merged_grounded = list(dict.fromkeys([*ex_grounded, *grounded]))[-_MAX_GROUNDED:]
+        (self._c.table("kg_nodes").update(
+            {"properties": merged_props, "grounded_in": merged_grounded})
+         .eq("id", node_id).execute())
+
+    async def upsert_kg_edges(self, kb_id: str, edges: list[dict]) -> int:
+        if not edges:
+            return 0
+        return await asyncio.to_thread(self._upsert_kg_edges_sync, kb_id, edges)
+
+    def _upsert_kg_edges_sync(self, kb_id: str, edges: list[dict]) -> int:
+        inserted = 0
+        for e in edges:
+            sid, tid = e.get("source_node_id"), e.get("target_node_id")
+            rel = e.get("relation") or ""
+            if not sid or not tid or sid == tid:
+                continue
+            dupe = (self._c.table("kg_edges").select("id").eq("kb_id", kb_id)
+                    .eq("source_node_id", sid).eq("target_node_id", tid)
+                    .eq("relation", rel).limit(1).execute().data)
+            if dupe:
+                continue
+            self._c.table("kg_edges").insert(
+                {"id": uuid.uuid4().hex, "org_id": self._org_id, "kb_id": kb_id,
+                 "source_node_id": sid, "target_node_id": tid, "relation": rel,
+                 "properties": dict(e.get("properties") or {}),
+                 "grounded_in": list(e.get("grounded_in") or []),
+                 "created_at": _now_iso()}).execute()
+            inserted += 1
+        return inserted
+
+    async def update_kg_node(self, kb_id: str, node_id: str, *, properties: dict,
+                             grounded_in: list[str] | None = None,
+                             embedding: list[float] | None = None,
+                             label: str | None = None,
+                             type: str | None = None) -> None:
+        patch: dict = {"properties": properties}
+        if grounded_in is not None:
+            patch["grounded_in"] = list(grounded_in)[-_MAX_GROUNDED:]
+        if label is not None:
+            patch["label"] = label
+        if type is not None:
+            patch["type"] = type
+        if embedding is not None:
+            patch["embedding"] = self._vec(list(embedding))
+
+        def _run() -> None:
+            (self._c.table("kg_nodes").update(patch)
+             .eq("id", node_id).eq("kb_id", kb_id).execute())
+        await asyncio.to_thread(_run)
+
+    def delete_kg_node(self, kb_id: str, node_id: str) -> dict:
+        exists = (self._c.table("kg_nodes").select("id")
+                  .eq("id", node_id).eq("kb_id", kb_id).limit(1).execute().data)
+        if not exists:
+            return {"deleted": False, "removed_edge_ids": []}
+        src = (self._c.table("kg_edges").select("id").eq("kb_id", kb_id)
+               .eq("source_node_id", node_id).execute().data)
+        tgt = (self._c.table("kg_edges").select("id").eq("kb_id", kb_id)
+               .eq("target_node_id", node_id).execute().data)
+        edge_ids = list(dict.fromkeys([r["id"] for r in [*src, *tgt]]))
+        for eid in edge_ids:
+            self._c.table("kg_edges").delete().eq("id", eid).execute()
+        self._c.table("kg_nodes").delete().eq("id", node_id).eq("kb_id", kb_id).execute()
+        return {"deleted": True, "removed_edge_ids": edge_ids}
+
+    def delete_kg_edge(self, kb_id: str, edge_id: str) -> dict:
+        removed = (self._c.table("kg_edges").delete()
+                   .eq("id", edge_id).eq("kb_id", kb_id).execute().data)
+        return {"deleted": bool(removed)}
+
+    def clear_kg(self, kb_id: str) -> None:
+        self._c.table("kg_edges").delete().eq("kb_id", kb_id).execute()
+        self._c.table("kg_nodes").delete().eq("kb_id", kb_id).execute()
