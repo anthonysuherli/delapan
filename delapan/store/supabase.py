@@ -401,3 +401,114 @@ class SupabaseStore:
     def clear_kg(self, kb_id: str) -> None:
         self._c.table("kg_edges").delete().eq("kb_id", kb_id).execute()
         self._c.table("kg_nodes").delete().eq("kb_id", kb_id).execute()
+
+    # --- synopsis ------------------------------------------------------------
+
+    def load_synopsis(self, kb_id: str) -> dict | None:
+        rows = (self._c.table("kb_synopsis")
+                .select("content,finding_count_at_build,built_at,model")
+                .eq("kb_id", kb_id).limit(1).execute().data)
+        if not rows:
+            return None
+        r = rows[0]
+        return {"content": r.get("content") or [],
+                "finding_count_at_build": r.get("finding_count_at_build"),
+                "built_at": r.get("built_at"), "model": r.get("model")}
+
+    def upsert_synopsis(self, kb_id: str, content: list, finding_count: int, model: str) -> None:
+        self._c.table("kb_synopsis").upsert(
+            {"kb_id": kb_id, "org_id": self._org_id, "content": content,
+             "finding_count_at_build": finding_count, "model": model,
+             "built_at": _now_iso()}, on_conflict="kb_id").execute()
+
+    # --- exploration ---------------------------------------------------------
+
+    def create_exploration(self, org_id: str, kb_id: str, prompt: str) -> str:
+        eid = uuid.uuid4().hex
+        self._c.table("explorations").insert(
+            {"id": eid, "org_id": self._org_id, "kb_id": kb_id, "prompt": prompt,
+             "status": "pending", "started_at": _now_iso(),
+             "created_at": _now_iso()}).execute()
+        return eid
+
+    def update_exploration(self, exploration_id: str, **patch) -> None:
+        allowed = {"status", "error", "finding_ids", "started_at", "completed_at", "prompt"}
+        clean = {k: v for k, v in patch.items() if k in allowed}
+        if not clean:
+            return
+        self._c.table("explorations").update(clean).eq("id", exploration_id).execute()
+
+    def get_exploration(self, exploration_id: str) -> dict | None:
+        rows = (self._c.table("explorations")
+                .select("id,status,finding_ids,completed_at,error")
+                .eq("id", exploration_id).limit(1).execute().data)
+        if not rows:
+            return None
+        r = rows[0]
+        return {"id": r["id"], "status": r["status"],
+                "finding_ids": r.get("finding_ids") or [],
+                "completed_at": r.get("completed_at"), "error": r.get("error")}
+
+    # --- KG intent schema ----------------------------------------------------
+
+    def get_kg_intent(self, kb_id: str) -> dict | None:
+        rows = (self._c.table("kg_schemas").select("version,schema")
+                .eq("kb_id", kb_id).order("version", desc=True).limit(1).execute().data)
+        if not rows:
+            return None
+        return {"version": rows[0]["version"], "schema": rows[0].get("schema") or {}}
+
+    def set_kg_intent(self, org_id: str, kb_id: str, schema: dict) -> dict:
+        cur = (self._c.table("kg_schemas").select("version")
+               .eq("kb_id", kb_id).order("version", desc=True).limit(1).execute().data)
+        next_version = (cur[0]["version"] if cur else 0) + 1
+        self._c.table("kg_schemas").insert(
+            {"id": uuid.uuid4().hex, "org_id": org_id, "kb_id": kb_id,
+             "version": next_version, "schema": schema,
+             "created_at": _now_iso()}).execute()
+        return {"version": next_version, "schema": schema}
+
+    # --- offer/drift stamps (best-effort) ------------------------------------
+
+    def get_init_offered(self, kb_id: str) -> bool:
+        try:
+            rows = (self._c.table("kbs").select("init_offered_at")
+                    .eq("id", kb_id).limit(1).execute().data)
+            return bool(rows and rows[0].get("init_offered_at"))
+        except Exception:  # noqa: BLE001 — column absent
+            return False
+
+    def mark_init_offered(self, kb_id: str) -> None:
+        try:
+            self._c.table("kbs").update({"init_offered_at": _now_iso()}).eq("id", kb_id).execute()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def get_drift_marker(self, kb_id: str) -> int:
+        try:
+            rows = (self._c.table("kbs").select("drift_offered_count")
+                    .eq("id", kb_id).limit(1).execute().data)
+            v = rows[0].get("drift_offered_count") if rows else None
+            return int(v) if v is not None else 0
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def set_drift_marker(self, kb_id: str, count: int) -> None:
+        try:
+            self._c.table("kbs").update({"drift_offered_count": int(count)}).eq("id", kb_id).execute()
+        except Exception:  # noqa: BLE001
+            pass
+
+    # --- monitoring (best-effort, never raises) ------------------------------
+
+    async def record_access(self, *, org_id: str, kb_id: str, surface: str,
+                            targets: list, query_text: str | None = None) -> None:
+        def _run() -> None:
+            try:
+                self._c.table("access_events").insert(
+                    {"org_id": self._org_id, "kb_id": kb_id, "surface": surface,
+                     "targets": list(targets), "query_text": query_text,
+                     "created_at": _now_iso()}).execute()
+            except Exception:  # noqa: BLE001 — monitoring must never break the caller
+                pass
+        await asyncio.to_thread(_run)
