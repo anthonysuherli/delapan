@@ -178,3 +178,104 @@ class SupabaseStore:
     def delete_finding(self, kb_id: str, finding_id: str) -> dict:
         self._c.table("findings").delete().eq("kb_id", kb_id).eq("id", finding_id).execute()
         return {"deleted": finding_id}
+
+    # --- KG read -------------------------------------------------------------
+
+    @staticmethod
+    def _node(r: dict) -> dict:
+        return {"id": r["id"], "type": r["type"], "label": r["label"],
+                "properties": r.get("properties") or {},
+                "grounded_in": r.get("grounded_in") or [], "created_at": r["created_at"]}
+
+    @staticmethod
+    def _edge(r: dict) -> dict:
+        return {"id": r["id"], "source_node_id": r["source_node_id"],
+                "target_node_id": r["target_node_id"], "relation": r["relation"],
+                "properties": r.get("properties") or {},
+                "grounded_in": r.get("grounded_in") or [], "created_at": r["created_at"]}
+
+    def _incident_edges(self, kb_id: str, frontier: list[str], edge_cap: int) -> list[dict]:
+        # PostgREST .or_() is brittle; fetch source- and target-incident edges
+        # separately and union (mirrors the SQLite OR query).
+        src = (self._c.table("kg_edges").select("*").eq("kb_id", kb_id)
+               .in_("source_node_id", frontier).limit(edge_cap).execute().data)
+        tgt = (self._c.table("kg_edges").select("*").eq("kb_id", kb_id)
+               .in_("target_node_id", frontier).limit(edge_cap).execute().data)
+        seen, out = set(), []
+        for r in [*src, *tgt]:
+            if r["id"] not in seen:
+                seen.add(r["id"])
+                out.append(r)
+        return out
+
+    def get_kg_subgraph(self, kb_id, *, seed_node_ids=None,
+                        node_cap=200, edge_cap=600, depth=1) -> dict:
+        if seed_node_ids:
+            frontier = list(dict.fromkeys(seed_node_ids))
+            all_node_ids: set[str] = set(frontier)
+            all_edges: list[dict] = []
+            seen_e: set[str] = set()
+            visited: set[str] = set()
+            for _ in range(max(depth, 1)):
+                to_expand = [n for n in frontier if n not in visited]
+                if not to_expand:
+                    break
+                visited.update(to_expand)
+                hop = self._incident_edges(kb_id, to_expand, edge_cap)
+                new_nodes: set[str] = set()
+                for er in hop:
+                    if er["id"] not in seen_e:
+                        seen_e.add(er["id"])
+                        all_edges.append(er)
+                    new_nodes.add(er["source_node_id"])
+                    new_nodes.add(er["target_node_id"])
+                all_node_ids.update(new_nodes)
+                if len(all_node_ids) >= node_cap:
+                    break
+                frontier = [n for n in new_nodes if n not in visited]
+                if not frontier:
+                    break
+            wanted = list(all_node_ids)[:node_cap]
+            node_rows = (self._c.table("kg_nodes").select("*").eq("kb_id", kb_id)
+                         .in_("id", wanted).execute().data) if wanted else []
+            edge_rows = all_edges[:edge_cap]
+        else:
+            node_rows = (self._c.table("kg_nodes").select("*")
+                         .eq("kb_id", kb_id).limit(node_cap).execute().data)
+            edge_rows = (self._c.table("kg_edges").select("*")
+                         .eq("kb_id", kb_id).limit(edge_cap).execute().data)
+        return {"nodes": [self._node(r) for r in node_rows],
+                "edges": [self._edge(r) for r in edge_rows]}
+
+    def kg_stats(self, kb_id: str) -> dict:
+        node_rows = (self._c.table("kg_nodes").select("type").eq("kb_id", kb_id).execute().data)
+        edge_rows = (self._c.table("kg_edges").select("relation").eq("kb_id", kb_id).execute().data)
+        by_type: dict[str, int] = {}
+        for r in node_rows:
+            by_type[r.get("type") or "unknown"] = by_type.get(r.get("type") or "unknown", 0) + 1
+        by_relation: dict[str, int] = {}
+        for r in edge_rows:
+            key = r.get("relation") or "unknown"
+            by_relation[key] = by_relation.get(key, 0) + 1
+        return {"node_count": len(node_rows), "edge_count": len(edge_rows),
+                "by_type": by_type, "by_relation": by_relation}
+
+    def list_kg_nodes(self, kb_id, *, type=None, limit=None) -> list[dict]:
+        n = min(limit or 50, 500)
+        q = self._c.table("kg_nodes").select("*").eq("kb_id", kb_id)
+        if type:
+            q = q.eq("type", type)
+        rows = q.order("created_at", desc=True).limit(n).execute().data
+        return [self._node(r) for r in rows]
+
+    def get_kg_node(self, kb_id: str, node_id: str) -> dict | None:
+        rows = (self._c.table("kg_nodes").select("*")
+                .eq("id", node_id).eq("kb_id", kb_id).limit(1).execute().data)
+        return self._node(rows[0]) if rows else None
+
+    async def match_kg_nodes(self, kb_id, query_embedding, match_count, min_similarity):
+        params = {"query_embedding": self._vec(query_embedding), "match_kb_id": kb_id,
+                  "match_count": match_count, "min_similarity": min_similarity}
+        data = await asyncio.to_thread(
+            lambda: self._c.rpc("match_kg_nodes", params).execute().data)
+        return data or []
