@@ -190,6 +190,40 @@ def test_findings_list_get_delete(client, kb):
     assert client.delete(f"{BASE}/findings/f1").status_code == 404
 
 
+def test_finding_resolves_across_kbs_in_same_org(client, kb):
+    """A node in one KB can cite a finding owned by another KB (unified graph).
+
+    The /findings/{id} read falls back to a global-by-id lookup so cross-KB
+    `grounded_in` citations resolve instead of 404-ing as 'finding not found'."""
+    store, _kb_id = kb
+    org_id, project_id = store.resolve_project("proj", create=False)
+    other_kb = store.resolve_kb(org_id, project_id, "other", create=True)
+    asyncio.run(
+        store.insert_findings(
+            [
+                {
+                    "id": "xkb1",
+                    "kb_id": other_kb,
+                    "title": "Owned by other KB",
+                    "content": {"summary": "cross-kb body"},
+                    "category": "fact",
+                    "confidence": 0.7,
+                    "tags": [],
+                    "provenance": [],
+                }
+            ]
+        )
+    )
+    # Not in the 'kb' scope's own findings list...
+    assert client.get(f"{BASE}/findings").json()["count"] == 0
+    # ...but the evidence read resolves it via the global fallback.
+    got = client.get(f"{BASE}/findings/xkb1").json()
+    assert got["title"] == "Owned by other KB"
+    assert got["content"] == {"summary": "cross-kb body"}
+    # A genuinely unknown id still 404s.
+    assert client.get(f"{BASE}/findings/nope").status_code == 404
+
+
 def test_synopsis_null_then_row(client, kb):
     store, kb_id = kb
     assert client.get(f"{BASE}/synopsis").json() is None
