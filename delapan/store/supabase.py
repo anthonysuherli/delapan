@@ -248,16 +248,24 @@ class SupabaseStore:
                 "edges": [self._edge(r) for r in edge_rows]}
 
     def kg_stats(self, kb_id: str) -> dict:
-        node_rows = (self._c.table("kg_nodes").select("type").eq("kb_id", kb_id).execute().data)
-        edge_rows = (self._c.table("kg_edges").select("relation").eq("kb_id", kb_id).execute().data)
+        # Use count="exact" so totals are accurate even when PostgREST's default
+        # row cap truncates the payload.  by_type/by_relation are aggregated over
+        # the fetched page — for very large KBs a dedicated kg_stats RPC would be
+        # the exact path, but that is deferred.
+        node_res = (self._c.table("kg_nodes").select("type", count="exact")
+                    .eq("kb_id", kb_id).execute())
+        edge_res = (self._c.table("kg_edges").select("relation", count="exact")
+                    .eq("kb_id", kb_id).execute())
         by_type: dict[str, int] = {}
-        for r in node_rows:
-            by_type[r.get("type") or "unknown"] = by_type.get(r.get("type") or "unknown", 0) + 1
+        for r in node_res.data:
+            key = r.get("type") or "unknown"
+            by_type[key] = by_type.get(key, 0) + 1
         by_relation: dict[str, int] = {}
-        for r in edge_rows:
+        for r in edge_res.data:
             key = r.get("relation") or "unknown"
             by_relation[key] = by_relation.get(key, 0) + 1
-        return {"node_count": len(node_rows), "edge_count": len(edge_rows),
+        return {"node_count": int(node_res.count or 0),
+                "edge_count": int(edge_res.count or 0),
                 "by_type": by_type, "by_relation": by_relation}
 
     def list_kg_nodes(self, kb_id, *, type=None, limit=None) -> list[dict]:

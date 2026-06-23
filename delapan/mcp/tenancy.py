@@ -97,7 +97,8 @@ def resolve_tenant(project: str, kb: str, *, create: bool = True) -> TenantConte
 
     # Cloud tier: configured MCP user login → RLS-scoped store.
     user_id, token = _login()
-    store = get_store(token)
+    org_id = _org_for(user_id)
+    store = get_store(token, org_id=org_id)
     org_id, project_id = store.resolve_project(project, create=create)
     kb_id = store.resolve_kb(org_id, project_id, kb, create=create)
     return TenantContext(
@@ -121,5 +122,5 @@ def resolve_store():
 
     if active_backend() == "local":
         return get_store()
-    _user_id, token = _login()
-    return get_store(token)
+    user_id, token = _login()
+    return get_store(token, org_id=_org_for(user_id))
