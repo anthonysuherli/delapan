@@ -47,6 +47,16 @@ class Store(Protocol):
         """One finding scoped to `kb_id`. Raises if not found."""
         ...
 
+    def get_finding_global(self, finding_id: str) -> dict:
+        """One finding by its global id, ignoring KB scope. Raises if not found.
+
+        ``findings.id`` is globally unique, so this resolves cross-KB
+        ``grounded_in`` citations (e.g. a unified graph whose nodes cite findings
+        owned by the source KBs). Org isolation still applies on the cloud tier
+        via RLS; on the local tier the single synthetic org makes it a no-op.
+        """
+        ...
+
     def list_findings(
         self, kb_id: str, category: str | None = None, limit: int | None = None
     ) -> dict:
