@@ -36,7 +36,9 @@ alter table resolution_events enable row level security;
 -- text) happens in SupabaseStore._row_payload before this is called; this function
 -- only does the explicit casts and the two-statement transaction.
 create or replace function supersede_finding(p_kb_id uuid, p_target_id uuid, p_row jsonb)
-returns uuid language plpgsql security invoker as $$
+returns uuid language plpgsql security invoker
+set search_path = public, extensions
+as $$
 declare v_new_id uuid;
 begin
   insert into findings (id, org_id, kb_id, title, content, category, confidence,
