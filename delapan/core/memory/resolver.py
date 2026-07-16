@@ -59,8 +59,15 @@ async def resolve(
     candidates: list[Finding],
     embeddings: list[list[float]],
     cfg: MemoryConfig,
+    *,
+    neighbor_sets: list[list[dict]] | None = None,
 ) -> list[ResolutionDecision]:
     """One decision per candidate (same order + length as ``candidates``).
+
+    Neighbors are retrieved per candidate unless the caller supplies
+    ``neighbor_sets`` — the backfill script does, because a replayed candidate
+    is already a live row and would otherwise match itself via ``match_findings``
+    at similarity ~1.0.
 
     Candidates with no neighbor above the similarity floor short-circuit to ADD
     without consuming an LLM slot. need-LLM candidates are chunked by
@@ -70,18 +77,19 @@ async def resolve(
     if not candidates:
         return []
 
-    neighbor_sets: list[list[dict]] = []
-    for emb in embeddings:
-        try:
-            hits = await store.match_findings(
-                kb_id,
-                emb,
-                match_count=cfg.neighbor_top_k,
-                min_similarity=cfg.neighbor_min_similarity,
-            )
-        except Exception:  # noqa: BLE001 — retrieval failure → treat as no neighbors
-            hits = []
-        neighbor_sets.append(hits)
+    if neighbor_sets is None:
+        neighbor_sets = []
+        for emb in embeddings:
+            try:
+                hits = await store.match_findings(
+                    kb_id,
+                    emb,
+                    match_count=cfg.neighbor_top_k,
+                    min_similarity=cfg.neighbor_min_similarity,
+                )
+            except Exception:  # noqa: BLE001 — retrieval failure → treat as no neighbors
+                hits = []
+            neighbor_sets.append(hits)
 
     # Default everything to ADD; only candidates with neighbors need the LLM.
     decisions: list[ResolutionDecision] = [
