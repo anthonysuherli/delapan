@@ -49,10 +49,14 @@ The local tier stores everything in `~/.delapan/delapan.db` (override with
 |---|---|
 | **Coverage-banded grounding** — score how well the KB covers a query | `core/agent/` |
 | **Gap-fill exploration** — plan → search → crawl → extract → merge | `core/exploration/` |
+| **Write-time resolution** — ADD/UPDATE/NOOP/SUPERSEDE a candidate finding against its KB before persisting; nothing is ever deleted, only retired (bi-temporal `valid_from`/`invalidated_at`/`superseded_by`) | `core/memory/` |
 | **Knowledge graph** — entities + relations over findings | `core/knowledge_graph/` |
-| **KB / findings / projects** persistence | `core/{findings,kbs,projects}/` |
-| **Pluggable storage** — `Store` protocol; ships SQLite | `store/` |
+| **Pluggable storage** — `Store` protocol; ships SQLite, plus a Supabase/pgvector backend | `store/` |
 | **MCP server** | `mcp/` |
+
+Findings, KBs, and projects are not separate submodules — that persistence lives
+inside the `Store` implementations themselves (`store/sqlite.py`, `store/supabase.py`),
+behind the one `Store` protocol below.
 
 ## Architecture — the storage seam
 
@@ -67,8 +71,19 @@ store = get_store()          # SQLiteStore on the local tier
 findings = store.match_findings(kb_id, embedding, limit=10)
 ```
 
-The open-core distribution ships the **SQLite** backend. The hosted/cloud backend is a
-separate, closed implementation behind the same protocol.
+Every write to `findings` goes through `core/memory/persist.py::resolve_and_persist`,
+not straight to `insert_findings` — a resolver decides per candidate whether it's
+genuinely new, refines an existing finding, merely corroborates one, or contradicts
+one, and applies that via the `Store`'s `update_finding`/`invalidate_finding`/
+`supersede_finding` primitives. Set `memory.enabled: false` in `config.yaml` to fall
+back to plain append-only ADD. `scripts/dedup_backfill.py` retires duplicates
+already sitting in an existing KB (dry-run by default); `scripts/calibrate_bands.py`
+recalibrates the coverage-band thresholds above for whichever embedding model is
+active. Schema changes for this land in `migrations/` (cloud tier only — SQLite
+migrates itself in-process).
+
+The open-core distribution ships the **SQLite** backend, at parity with the cloud
+Supabase/pgvector backend for both retrieval and the write-resolution path above.
 
 ## Configuration
 
@@ -91,7 +106,7 @@ pytest && ruff check .
 
 **Working today (verified on SQLite, no cloud deps):**
 - The `Store` seam — `get_store()` → `SQLiteStore`; tenancy, project listing, findings, synopsis, KG.
-- The engine core — `agent` (preamble/synopsis/resume), `exploration`, `findings`, `kbs`, `projects`, `knowledge_graph` models.
+- The engine core — `agent` (preamble/synopsis/resume), `exploration`, `memory` (resolver + persist), `knowledge_graph` models.
 - The tenancy gateway — `resolve_tenant()` resolves a local tenant through the store.
 - The MCP server — `delapan_resume` / `delapan_search` / `delapan_explore` / `delapan_projects` (whole package imports; all 4 tools register and run).
 - `python -m delapan.api.main` → `/health` plus the `/api/*` surface: projects,

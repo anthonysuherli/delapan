@@ -1,9 +1,10 @@
 # =============================================================================
 # Delapan — tunable runtime config
 #
-# Human-editable knobs for the agent, search/retrieval, and the research
-# pipeline. These are NOT secrets — API keys (and, in the cloud build, Supabase
-# URLs and the JWT secret) live in .env.
+# Human-editable knobs for the agent, search/retrieval, the research pipeline,
+# and write-time memory resolution (`memory:` — the ADD/UPDATE/NOOP/SUPERSEDE
+# kill-switch and tuning). These are NOT secrets — API keys (and, in the cloud
+# build, Supabase URLs and the JWT secret) live in .env.
 #
 # Precedence (lowest → highest):
 #     built-in defaults  <  this file  <  environment variables

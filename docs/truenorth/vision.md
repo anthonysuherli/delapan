@@ -115,3 +115,16 @@ decision before it commits.
   and Non-Goal; local dev/test stays hermetic against the local Supabase stack.
   Adds the foundational "Supabase unification" detour (build `SupabaseStore`,
   remove SQLite). — Ratified by: anthonysuherli (session 2026-06-13)
+- 2026-07-16 — End Goal **"Self-correcting memory writes" is DELIVERED**:
+  findings now resolve ADD/UPDATE/NOOP/SUPERSEDE against the KB at write time
+  (`core/memory/`) — SUPERSEDE instead of the hard DELETE this vision specified,
+  via bi-temporal `valid_from`/`invalidated_at`/`superseded_by` so nothing is ever
+  removed, only retired. **Not** delivered as this vision assumed: it shipped on
+  BOTH SQLite and Supabase, not Supabase-only — the SQLite retirement End Goal 0
+  calls for has not happened, and this change instead gave SQLite full
+  write-primitive parity with the cloud `Store`. The codebase has now moved away
+  from End Goal 0 twice (also flagged in the delapan-82 fork's design spec,
+  2026-07-08, which explicitly reverses this vision's Supabase-unification
+  direction) — this vision's storage End Goal is stale and should be revisited,
+  not silently treated as still in effect. — Ratified by: anthonysuherli
+  (session 2026-07-16)
