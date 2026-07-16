@@ -55,3 +55,27 @@ def test_unparseable_last_seen_does_not_raise():
     rows = [{"id": "x", "recurrence": 2, "coverage": "gap", "last_seen": "not-a-date"}]
     out = rank_backlog(rows, cfg, NOW)
     assert len(out) == 1 and out[0]["score"] >= 0.0
+
+
+def test_aware_last_seen_with_naive_now():
+    """Timezone-aware last_seen with naive now should not raise TypeError."""
+    cfg = CurationConfig()
+    # Create a naive now (no tzinfo)
+    now_naive = datetime(2026, 7, 16)
+    # Create row with timezone-aware last_seen (UTC offset in ISO string)
+    rows = [{"id": "x", "recurrence": 2, "coverage": "gap", "last_seen": "2026-07-15T00:00:00+00:00"}]
+    # Should not raise; should return a valid score
+    out = rank_backlog(rows, cfg, now_naive)
+    assert len(out) == 1 and out[0]["score"] >= 0.0
+
+
+def test_naive_last_seen_string():
+    """Fully naive last_seen (no UTC offset in ISO string) should work."""
+    cfg = CurationConfig()
+    # Create a naive now (no tzinfo)
+    now_naive = datetime(2026, 7, 16)
+    # Create row with naive last_seen (no timezone offset)
+    rows = [{"id": "x", "recurrence": 2, "coverage": "gap", "last_seen": "2026-07-14T00:00:00"}]
+    # Should not raise; should return a valid score
+    out = rank_backlog(rows, cfg, now_naive)
+    assert len(out) == 1 and out[0]["score"] >= 0.0
