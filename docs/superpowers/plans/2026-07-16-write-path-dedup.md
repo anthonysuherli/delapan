@@ -905,7 +905,8 @@ async def test_noop_corroborates_target_and_raises_confidence(store, monkeypatch
     f1 = _finding(pid, "Tavily pricing", {"k": "free 1000/mo"})
     f1.provenance = [{"url": "http://a"}]
     fid = (await persist_mod.resolve_and_persist(ctx, store, [f1], cfg)).affected_finding_ids[0]
-    before = store.get_finding(kb, fid)["confidence"]
+    before_row = store.get_finding(kb, fid)
+    before, before_content = before_row["confidence"], before_row["content"]
 
     # A duplicate citing a NEW url → corroboration: same row, more sources.
     monkeypatch.setattr(
@@ -923,8 +924,8 @@ async def test_noop_corroborates_target_and_raises_confidence(store, monkeypatch
     assert store.count_findings(kb) == 1           # no duplicate
     row = store.get_finding(kb, fid)
     assert {p["url"] for p in row["provenance"]} == {"http://a", "http://b"}
-    assert row["confidence"] > before              # monotonic raise
-    assert row["content"] == before_content_of(row)  # body untouched
+    assert row["confidence"] > before               # monotonic raise
+    assert row["content"] == before_content         # body untouched — NOOP never rewrites content
 
 
 @pytest.mark.asyncio
@@ -1041,16 +1042,11 @@ async def test_cloud_tier_forces_pure_add(store, monkeypatch):
     assert store.count_findings(kb) == 1     # plain ADD, resolver never called
 ```
 
-Add these two helpers at the top of the file (below the imports), used by the tests above:
+Add this helper at the top of the file (below the imports), used by the tests above:
 
 ```python
 async def _decisions(ds):
     return ds
-
-
-def before_content_of(row):
-    """The body a NOOP must leave untouched (NOOP never rewrites content)."""
-    return row["content"]
 ```
 
 Note on `_decisions`: `monkeypatch.setattr(persist_mod, "resolve", lambda *a, **k: _decisions([...]))` returns the coroutine `resolve_and_persist` awaits.

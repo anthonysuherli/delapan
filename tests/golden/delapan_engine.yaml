@@ -1,0 +1,65 @@
+# Golden set reproducing the observed band-miscalibration bug: querying the
+# delapan/master KB for the engine's own architecture returns off-topic
+# findings under a false "rich" verdict. The bands (.55/.40/.25) were tuned
+# for text-embedding-3-small; the KB is now embedded with
+# google/gemini-embedding-001, whose similarity distribution runs denser, so
+# off-topic findings clear band1 (>= 0.55) on shared vocabulary alone
+# ("pipeline", "coverage", "merge") rather than real topical relevance.
+#
+# None of these findings are genuinely about delapan's own code (findings
+# pipeline / preamble assembly / coverage banding) — the master KB has no such
+# findings yet. Real titles/bodies pulled from project=delapan, kb=master:
+# a mix of FDE-career findings (career/comp-advice, clearly off-topic) and
+# generic KB/knowledge-graph-research findings (about unrelated systems, but
+# sharing enough vocabulary with the query to rank even higher).
+name: delapan_engine
+embedding_model: google/gemini-embedding-001
+findings:
+  - id: 10cffa85-aaee-43aa-8681-d52b48a6ece5
+    title: FDE Salary and Job Market Growth in 2025-2026
+    content: Job postings for Forward Deployed Engineer roles grew 729% in the
+      year to April 2026, with posted salaries running $200K to $300K+.
+    category: Compensation Data
+  - id: b9027cda-3a3f-4eb9-afa9-d01890d36e7a
+    title: Career Path and Resume Presentation Advice for FDE Roles
+    content: FDE resumes must show experience shipping a RAG pipeline or agentic
+      workflow to production, not just a demo notebook, plus eval engineering skills.
+    category: Career Advice
+  - id: 0d4fdb69-e96b-429b-b14c-2d615f197ad5
+    title: Palantir's Forward Deployed Engineer (Delta) Profile
+    content: The Delta (FDE) role writes production-grade code, builds data
+      pipelines, performs ontology modeling, and passes the same technical bar
+      as Palantir's core product engineers.
+    category: Role Definition
+  - id: 2a7dc25a-4847-4ea6-9142-f6bd90fc9684
+    title: IT Incident Text Deduplication and Normalization Pipeline
+    content: Pipeline components are text normalization, segmentation,
+      deduplication, and adaptive batching, to reduce redundant inference
+      operations in air-gapped environments.
+    category: Deduplication
+  - id: 256c97eb-9f60-4eff-894d-8f533cac28e4
+    title: Parallel Binary Merge Algorithm for Incremental TKG Updates
+    content: Iterative pairwise merging of atomic temporal knowledge graphs in
+      parallel until a single consolidated graph is obtained, scaling with
+      available threads.
+    category: Incremental Consolidation
+  - id: 59c94ccd-78ff-4860-b30a-1e66b6beffc6
+    title: Chunk Size Optimization to Mitigate LLM Forgetting Effect
+    content: LLMs exhibit a forgetting effect where factual exhaustivity
+      deteriorates as context token count increases; keeping chunks under 400
+      tokens targets an exhaustivity score above 0.8.
+    category: Retrieval Coverage
+  - id: 39c941ae-3cb9-46ab-b26c-27ad01fa6588
+    title: Web Retrieval Coverage vs Training Data Reliability
+    content: Some assistants always search the web (Perplexity, Gemini), others
+      browse on demand (ChatGPT, Copilot), and others have no web access
+      (Llama, DeepSeek, Mistral) — changing retrieval coverage vs. training reliance.
+    category: Retrieval Coverage
+queries:
+  - query: "delapan engine architecture: findings pipeline, preamble assembly, coverage banding"
+    # None of the seven findings above are actually about delapan's own code —
+    # the correct verdict is sparse (or gap). The observed bug is that the
+    # gemini-embedding-001 similarity distribution is dense enough that these
+    # off-topic findings clear band1 anyway, producing a false "rich".
+    expect_verdict: sparse
+    expect_top_ids: []

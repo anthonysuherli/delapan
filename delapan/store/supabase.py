@@ -13,10 +13,13 @@ methods run the sync client under ``asyncio.to_thread``.
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from datetime import datetime, timezone
 
 from delapan.core.clients.supabase import user_client
+
+logger = logging.getLogger(__name__)
 
 _MAX_GROUNDED = 50
 LIST_DEFAULT_LIMIT = 20
@@ -113,27 +116,71 @@ class SupabaseStore:
         )
         return data or []
 
+    def _row_payload(self, r: dict) -> dict:
+        """The insert_findings enrichment, shared with supersede_finding: stamps
+        org_id/status/created_at/valid_from and encodes embedding as vector text."""
+        row = {
+            "id": r.get("id") or uuid.uuid4().hex, "org_id": self._org_id,
+            "kb_id": r.get("kb_id"), "title": r.get("title"), "content": r.get("content"),
+            "category": r.get("category"), "confidence": r.get("confidence"),
+            "tags": list(r.get("tags") or []), "provenance": list(r.get("provenance") or []),
+            "status": "approved", "created_at": r.get("created_at") or _now_iso(),
+            "valid_from": r.get("valid_from") or _now_iso(),
+        }
+        emb = r.get("embedding")
+        if emb is not None:
+            row["embedding"] = self._vec(list(emb))
+        return row
+
     async def insert_findings(self, rows: list[dict]) -> list[str]:
         if not rows:
             return []
-        payload, ids = [], []
-        for r in rows:
-            fid = r.get("id") or uuid.uuid4().hex
-            ids.append(fid)
-            row = {
-                "id": fid, "org_id": self._org_id, "kb_id": r.get("kb_id"),
-                "title": r.get("title"), "content": r.get("content"),
-                "category": r.get("category"), "confidence": r.get("confidence"),
-                "tags": list(r.get("tags") or []),
-                "provenance": list(r.get("provenance") or []),
-                "status": "approved", "created_at": r.get("created_at") or _now_iso(),
-            }
-            emb = r.get("embedding")
-            if emb is not None:
-                row["embedding"] = self._vec(list(emb))
-            payload.append(row)
+        payload = [self._row_payload(r) for r in rows]
         await asyncio.to_thread(lambda: self._c.table("findings").insert(payload).execute())
-        return ids
+        return [row["id"] for row in payload]
+
+    async def update_finding(
+        self, kb_id: str, finding_id: str, *, content=None, confidence=None,
+        provenance=None, embedding=None, title: str | None = None,
+    ) -> None:
+        """Partial in-place update; ``None`` fields are left out of the payload."""
+        patch: dict = {}
+        if content is not None:
+            patch["content"] = content
+        if confidence is not None:
+            patch["confidence"] = confidence
+        if provenance is not None:
+            patch["provenance"] = list(provenance)
+        if title is not None:
+            patch["title"] = title
+        if embedding is not None:
+            patch["embedding"] = self._vec(list(embedding))
+        if not patch:
+            return
+        await asyncio.to_thread(
+            lambda: self._c.table("findings").update(patch)
+            .eq("kb_id", kb_id).eq("id", finding_id).execute()
+        )
+
+    async def invalidate_finding(
+        self, kb_id: str, finding_id: str, *, superseded_by: str | None = None
+    ) -> None:
+        """Retire a row in place — it leaves every read path but stays readable."""
+        await asyncio.to_thread(
+            lambda: self._c.table("findings")
+            .update({"invalidated_at": _now_iso(), "superseded_by": superseded_by})
+            .eq("kb_id", kb_id).eq("id", finding_id).execute()
+        )
+
+    async def supersede_finding(self, kb_id: str, target_id: str, new_row: dict) -> str:
+        """Insert + retire in one server-side transaction. Returns the new id."""
+        params = {
+            "p_kb_id": kb_id, "p_target_id": target_id, "p_row": self._row_payload(new_row)
+        }
+        data = await asyncio.to_thread(
+            lambda: self._c.rpc("supersede_finding", params).execute().data
+        )
+        return data if isinstance(data, str) else data[0]
 
     @staticmethod
     def _finding(row: dict) -> dict:
@@ -142,6 +189,9 @@ class SupabaseStore:
             "category": row["category"], "confidence": row["confidence"],
             "tags": row.get("tags") or [], "provenance": row.get("provenance") or [],
             "created_at": row["created_at"],
+            "valid_from": row.get("valid_from"),
+            "invalidated_at": row.get("invalidated_at"),
+            "superseded_by": row.get("superseded_by"),
         }
 
     def get_finding(self, kb_id: str, finding_id: str) -> dict:
@@ -158,13 +208,16 @@ class SupabaseStore:
             raise RuntimeError("finding not found")
         return self._finding(rows[0])
 
-    def list_findings(self, kb_id, category=None, limit=None) -> dict:
+    def list_findings(self, kb_id, category=None, limit=None,
+                      include_invalidated: bool = False) -> dict:
         n = min(limit or LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT)
         q = (self._c.table("findings")
              .select("id,title,category,confidence,tags,created_at", count="exact")
              .eq("kb_id", kb_id))
         if category:
             q = q.eq("category", category)
+        if not include_invalidated:
+            q = q.is_("invalidated_at", "null")
         res = q.order("created_at", desc=True).limit(n).execute()
         findings = [{"id": r["id"], "title": r["title"], "category": r["category"],
                      "confidence": r["confidence"], "tags": r.get("tags") or [],
@@ -173,13 +226,47 @@ class SupabaseStore:
         return {"count": len(findings), "total": total, "findings": findings}
 
     def count_findings(self, kb_id: str) -> int:
+        """Exact LIVE finding count for `kb_id` (invalidated_at IS NULL)."""
         res = (self._c.table("findings").select("id", count="exact")
-               .eq("kb_id", kb_id).execute())
+               .eq("kb_id", kb_id).is_("invalidated_at", "null").execute())
         return int(res.count or 0)
 
     def delete_finding(self, kb_id: str, finding_id: str) -> dict:
         self._c.table("findings").delete().eq("kb_id", kb_id).eq("id", finding_id).execute()
         return {"deleted": finding_id}
+
+    # --- resolution event log -------------------------------------------------
+
+    async def insert_resolution_events(self, kb_id: str, events: list[dict]) -> None:
+        """Append resolution decision rows. Best-effort: an audit-log write must
+        never break the caller, so failures are logged and swallowed."""
+        if not events:
+            return
+        payload = [
+            {
+                "org_id": self._org_id, "kb_id": kb_id, "op": e.get("op"),
+                "candidate_title": e.get("candidate_title"),
+                "target_finding_id": e.get("target_finding_id"),
+                "new_finding_id": e.get("new_finding_id"),
+                "details": e.get("details"), "reason": e.get("reason") or "",
+                "created_at": _now_iso(),
+            }
+            for e in events
+        ]
+        try:
+            await asyncio.to_thread(
+                lambda: self._c.table("resolution_events").insert(payload).execute()
+            )
+        except Exception:  # noqa: BLE001 — audit log is best-effort
+            logger.warning("failed to write resolution_events for kb=%s", kb_id, exc_info=True)
+
+    def list_resolution_events(self, kb_id: str, limit: int | None = None) -> list[dict]:
+        """Most-recent resolution events for `kb_id`, newest first (cap 500)."""
+        n = min(limit or 50, 500)
+        return (
+            self._c.table("resolution_events").select("*")
+            .eq("kb_id", kb_id).order("created_at", desc=True).limit(n).execute().data
+        ) or []
 
     # --- KG read -------------------------------------------------------------
 

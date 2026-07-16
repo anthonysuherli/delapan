@@ -41,6 +41,11 @@ class _Query:
         self._filters.append(("in", col, list(vals)))
         return self
 
+    def is_(self, col, val):
+        """PostgREST ``is`` filter — only the ``"null"`` case is used today."""
+        self._filters.append(("is", col, val))
+        return self
+
     def order(self, col, desc=False):
         self._order = (col, desc)
         return self
@@ -56,6 +61,8 @@ class _Query:
             if kind == "neq" and row.get(col) == val:
                 return False
             if kind == "in" and row.get(col) not in val:
+                return False
+            if kind == "is" and val in (None, "null") and row.get(col) is not None:
                 return False
         return True
 

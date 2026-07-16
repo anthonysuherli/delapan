@@ -29,6 +29,7 @@ connection is simplest and correct here. ``tags``/``provenance``/``content``/
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import uuid
@@ -37,6 +38,8 @@ from pathlib import Path
 
 import sqlite_vec
 from sqlite_vec import serialize_float32
+
+logger = logging.getLogger(__name__)
 
 # Synthetic single-tenant org for the local tier.
 _ORG = "local"
@@ -55,6 +58,9 @@ _FINDING_COLS = (
     "tags",
     "provenance",
     "created_at",
+    "valid_from",
+    "invalidated_at",
+    "superseded_by",
 )
 _FINDING_LIST_COLS = ("id", "title", "category", "confidence", "tags", "created_at")
 # match_findings returns the full finding minus created_at, plus a computed similarity.
@@ -74,6 +80,9 @@ def _finding_from_row(r) -> dict:
         "tags": _json_load(r["tags"], []),
         "provenance": _json_load(r["provenance"], []),
         "created_at": r["created_at"],
+        "valid_from": r["valid_from"],
+        "invalidated_at": r["invalidated_at"],
+        "superseded_by": r["superseded_by"],
     }
 _FINDING_MATCH_COLS = ("id", "title", "content", "category", "confidence", "tags", "provenance")
 
@@ -89,7 +98,8 @@ CREATE TABLE IF NOT EXISTS kbs (
 CREATE TABLE IF NOT EXISTS findings (
   id TEXT PRIMARY KEY, org_id TEXT NOT NULL, kb_id TEXT NOT NULL,
   title TEXT, content TEXT, category TEXT, confidence REAL,
-  tags TEXT, provenance TEXT, created_at TEXT NOT NULL);
+  tags TEXT, provenance TEXT, created_at TEXT NOT NULL,
+  valid_from TEXT, invalidated_at TEXT, superseded_by TEXT);
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_findings USING vec0(finding_id TEXT, embedding float[1536]);
 CREATE TABLE IF NOT EXISTS kb_synopsis (
   kb_id TEXT PRIMARY KEY, org_id TEXT, content TEXT,
@@ -113,6 +123,12 @@ CREATE TABLE IF NOT EXISTS kg_schemas (
   id TEXT PRIMARY KEY, org_id TEXT NOT NULL, kb_id TEXT NOT NULL,
   version INTEGER NOT NULL DEFAULT 1, schema TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_kg_schemas_kb_version ON kg_schemas(kb_id, version);
+CREATE TABLE IF NOT EXISTS resolution_events (
+  id TEXT PRIMARY KEY, org_id TEXT, kb_id TEXT NOT NULL,
+  op TEXT NOT NULL, candidate_title TEXT, target_finding_id TEXT,
+  new_finding_id TEXT, details TEXT,
+  reason TEXT, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_resolution_events_kb ON resolution_events(kb_id);
 """
 
 # Post-schema migrations: ADD COLUMN statements for older DBs.
@@ -123,6 +139,15 @@ _ADD_COLUMN_MIGRATIONS: list[str] = [
     "ALTER TABLE kbs ADD COLUMN init_offered_at TEXT;",
     # 0008: schema-drift offer debounce — residual count stamped at last drift offer
     "ALTER TABLE kbs ADD COLUMN drift_offered_count INTEGER;",
+    # 0009: bi-temporal write path — when a fact became current, when it was retired,
+    # and the row that replaced it. NULL invalidated_at = live.
+    "ALTER TABLE findings ADD COLUMN valid_from TEXT;",
+    "ALTER TABLE findings ADD COLUMN invalidated_at TEXT;",
+    "ALTER TABLE findings ADD COLUMN superseded_by TEXT;",
+    # 0010: audit an op's effect, not just its verdict — the row it created and
+    # (for NOOP) the urls merged plus the confidence delta.
+    "ALTER TABLE resolution_events ADD COLUMN new_finding_id TEXT;",
+    "ALTER TABLE resolution_events ADD COLUMN details TEXT;",
 ]
 
 # Cap on how many grounding finding ids a long-lived node (a repo touched for
@@ -194,6 +219,16 @@ class SQLiteStore:
                 self._conn.commit()
             except Exception:  # noqa: BLE001 — column already present
                 pass
+        # valid_from has no column default (SQLite forbids non-constant ADD COLUMN
+        # defaults) — seed pre-existing rows from created_at; new rows are stamped
+        # by insert_findings. Idempotent: only NULLs are touched.
+        try:
+            self._conn.execute(
+                "UPDATE findings SET valid_from = created_at WHERE valid_from IS NULL;"
+            )
+            self._conn.commit()
+        except Exception:  # noqa: BLE001 — table may not exist yet on a fresh DB
+            pass
 
     # --- findings — hot path -------------------------------------------------
 
@@ -226,6 +261,7 @@ class SQLiteStore:
             placeholders = ",".join("?" for _ in categories)
             where.append(f"f.category IN ({placeholders})")
             params.extend(categories)
+        where.append("f.invalidated_at IS NULL")
         params.append(match_count)
         rows = self._conn.execute(
             f"""
@@ -257,6 +293,39 @@ class SQLiteStore:
             )
         return out
 
+    def _insert_finding_row(self, row: dict, fid: str, timestamp: str) -> None:
+        """Execute the findings + vec_findings inserts for one row. Does NOT
+        commit — the caller controls the transaction boundary (insert_findings
+        commits once after its loop; supersede_finding commits once after the
+        paired invalidate)."""
+        self._conn.execute(
+            """
+            INSERT INTO findings
+              (id, org_id, kb_id, title, content, category, confidence, tags, provenance,
+               created_at, valid_from)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                fid,
+                _ORG,
+                row.get("kb_id"),
+                row.get("title"),
+                _json_dump_maybe(row.get("content")),
+                row.get("category"),
+                row.get("confidence"),
+                json.dumps(list(row.get("tags") or [])),
+                json.dumps(list(row.get("provenance") or [])),
+                row.get("created_at") or timestamp,
+                row.get("valid_from") or timestamp,
+            ),
+        )
+        embedding = row.get("embedding")
+        if embedding is not None:
+            self._conn.execute(
+                "INSERT INTO vec_findings (finding_id, embedding) VALUES (?, ?);",
+                (fid, serialize_float32(list(embedding))),
+            )
+
     async def insert_findings(self, rows: list[dict]) -> list[str]:
         """Insert pre-embedded finding rows; return new ids in input order.
 
@@ -271,33 +340,86 @@ class SQLiteStore:
         for row in rows:
             fid = row.get("id") or uuid.uuid4().hex
             ids.append(fid)
-            self._conn.execute(
-                """
-                INSERT INTO findings
-                  (id, org_id, kb_id, title, content, category, confidence, tags, provenance, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """,
-                (
-                    fid,
-                    _ORG,
-                    row.get("kb_id"),
-                    row.get("title"),
-                    _json_dump_maybe(row.get("content")),
-                    row.get("category"),
-                    row.get("confidence"),
-                    json.dumps(list(row.get("tags") or [])),
-                    json.dumps(list(row.get("provenance") or [])),
-                    row.get("created_at") or _now_iso(),
-                ),
-            )
-            embedding = row.get("embedding")
-            if embedding is not None:
-                self._conn.execute(
-                    "INSERT INTO vec_findings (finding_id, embedding) VALUES (?, ?);",
-                    (fid, serialize_float32(list(embedding))),
-                )
+            self._insert_finding_row(row, fid, _now_iso())
         self._conn.commit()
         return ids
+
+    async def update_finding(
+        self,
+        kb_id: str,
+        finding_id: str,
+        *,
+        content=None,
+        confidence=None,
+        provenance=None,
+        embedding=None,
+        title: str | None = None,
+    ) -> None:
+        """Partial in-place update; id stays stable (KG ``grounded_in`` refs hold).
+
+        Every field is optional and ``None`` means KEEP the current value — the
+        NOOP-corroborate path updates provenance/confidence only and must not
+        clobber the body. Replaces the ``vec_findings`` row when an embedding is
+        given."""
+        sets: list[str] = []
+        vals: list[object] = []
+        if content is not None:
+            sets.append("content = ?")
+            vals.append(_json_dump_maybe(content))
+        if confidence is not None:
+            sets.append("confidence = ?")
+            vals.append(confidence)
+        if provenance is not None:
+            sets.append("provenance = ?")
+            vals.append(json.dumps(list(provenance)))
+        if title is not None:
+            sets.append("title = ?")
+            vals.append(title)
+        if sets:
+            self._conn.execute(
+                f"UPDATE findings SET {', '.join(sets)} WHERE id = ? AND kb_id = ?;",
+                (*vals, finding_id, kb_id),
+            )
+        if embedding is not None:
+            self._conn.execute("DELETE FROM vec_findings WHERE finding_id = ?;", (finding_id,))
+            self._conn.execute(
+                "INSERT INTO vec_findings (finding_id, embedding) VALUES (?, ?);",
+                (finding_id, serialize_float32(list(embedding))),
+            )
+        self._conn.commit()
+
+    async def invalidate_finding(
+        self, kb_id: str, finding_id: str, *, superseded_by: str | None = None
+    ) -> None:
+        """Retire a row in place — no insert. It leaves every read path
+        (match/list/count) but stays readable via get_finding for history."""
+        self._conn.execute(
+            "UPDATE findings SET invalidated_at = ?, superseded_by = ? WHERE id = ? AND kb_id = ?;",
+            (_now_iso(), superseded_by, finding_id, kb_id),
+        )
+        self._conn.commit()
+
+    async def supersede_finding(self, kb_id: str, target_id: str, new_row: dict) -> str:
+        """Insert ``new_row``, then retire ``target_id`` pointing at it. One
+        transaction: a failure leaves the KB untouched (never a dangling
+        invalidation, never an orphaned duplicate). Returns the new id."""
+        new_id = new_row.get("id") or uuid.uuid4().hex
+        now = _now_iso()
+        try:
+            self._conn.execute("BEGIN;")
+            self._insert_finding_row({**new_row, "kb_id": kb_id}, new_id, now)
+            cur = self._conn.execute(
+                "UPDATE findings SET invalidated_at = ?, superseded_by = ? "
+                "WHERE id = ? AND kb_id = ? AND invalidated_at IS NULL;",
+                (now, new_id, target_id, kb_id),
+            )
+            if cur.rowcount != 1:
+                raise ValueError(f"supersede target {target_id!r} not live in kb {kb_id!r}")
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        return new_id
 
     def get_finding(self, kb_id: str, finding_id: str) -> dict:
         """One finding scoped to `kb_id`. Raises if absent. JSON cols decoded."""
@@ -324,20 +446,28 @@ class SQLiteStore:
         return _finding_from_row(r)
 
     def list_findings(
-        self, kb_id: str, category: str | None = None, limit: int | None = None
+        self,
+        kb_id: str,
+        category: str | None = None,
+        limit: int | None = None,
+        include_invalidated: bool = False,
     ) -> dict:
         """Most-recent findings in `kb_id`. Returns {"count", "total", "findings"}.
 
         List view omits ``content``/``provenance`` (matching SupabaseStore);
         optional category filter; default/max limits mirror findings/service.
-        ``count`` is rows returned, ``total`` is rows matching regardless of
-        ``limit`` — the client needs both to tell truncation from completeness."""
+        Live rows only unless `include_invalidated` — retired rows stay
+        reachable for history/audit, never for retrieval. ``count`` is rows
+        returned, ``total`` is rows matching regardless of ``limit`` — the
+        client needs both to tell truncation from completeness."""
         n = min(limit or LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT)
         where = "WHERE kb_id = ?"
         params: list[object] = [kb_id]
         if category:
             where += " AND category = ?"
             params.append(category)
+        if not include_invalidated:
+            where += " AND invalidated_at IS NULL"
 
         sql = (
             f"SELECT {', '.join(_FINDING_LIST_COLS)} FROM findings {where} "
@@ -364,9 +494,12 @@ class SQLiteStore:
         return {"count": len(findings), "total": total, "findings": findings}
 
     def count_findings(self, kb_id: str) -> int:
-        """Exact finding count for `kb_id` (uncapped, unlike list_findings)."""
+        """Exact LIVE finding count for `kb_id` (uncapped, unlike list_findings).
+        Retired rows (invalidated_at set) are excluded — this drives synopsis
+        rebuild_delta, which must track live knowledge."""
         r = self._conn.execute(
-            "SELECT COUNT(*) AS n FROM findings WHERE kb_id = ?;", (kb_id,)
+            "SELECT COUNT(*) AS n FROM findings WHERE kb_id = ? AND invalidated_at IS NULL;",
+            (kb_id,),
         ).fetchone()
         return int(r["n"])
 
@@ -1048,6 +1181,63 @@ class SQLiteStore:
             self._conn.commit()
         except Exception:  # noqa: BLE001 — column may not exist yet
             pass
+
+    # --- resolution event log ------------------------------------------------
+
+    async def insert_resolution_events(self, kb_id: str, events: list[dict]) -> None:
+        """Append resolution decision rows; org forced ``"local"``. Best-effort:
+        an audit-log write must never break the caller, so failures are logged
+        and swallowed. No-op when empty."""
+        if not events:
+            return
+        try:
+            for e in events:
+                self._conn.execute(
+                    """
+                    INSERT INTO resolution_events
+                      (id, org_id, kb_id, op, candidate_title, target_finding_id,
+                       new_finding_id, details, reason, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (
+                        uuid.uuid4().hex,
+                        _ORG,
+                        kb_id,
+                        e.get("op"),
+                        e.get("candidate_title"),
+                        e.get("target_finding_id"),
+                        e.get("new_finding_id"),
+                        _json_dump_maybe(e.get("details")),
+                        e.get("reason"),
+                        _now_iso(),
+                    ),
+                )
+            self._conn.commit()
+        except Exception:  # noqa: BLE001 — audit log is best-effort; never break the caller
+            logger.warning("failed to write resolution_events for kb=%s", kb_id, exc_info=True)
+
+    def list_resolution_events(self, kb_id: str, limit: int | None = None) -> list[dict]:
+        """Most-recent resolution events for `kb_id`, newest first (cap 500)."""
+        n = min(limit or 50, 500)
+        rows = self._conn.execute(
+            "SELECT id, op, candidate_title, target_finding_id, new_finding_id, details, "
+            "reason, created_at "
+            "FROM resolution_events WHERE kb_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?;",
+            (kb_id, n),
+        ).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "op": r["op"],
+                "candidate_title": r["candidate_title"],
+                "target_finding_id": r["target_finding_id"],
+                "new_finding_id": r["new_finding_id"],
+                "details": _json_load(r["details"], None),
+                "reason": r["reason"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
 
     # --- monitoring — best-effort --------------------------------------------
 

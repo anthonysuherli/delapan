@@ -16,19 +16,18 @@ Run with: ``python -m delapan.mcp.server``.
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
-from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
 from delapan.core.agent.preamble import Depth, select_preamble
 from delapan.core.agent.synopsis import maybe_rebuild_synopsis
-from delapan.core.clients.embeddings import embed_batch, embed_text
+from delapan.core.clients.embeddings import embed_text
 from delapan.core.config import get_config, get_settings
 from delapan.core.exploration import run_exploration
 from delapan.core.knowledge_graph.builder import schedule_kg_update
+from delapan.core.memory.persist import resolve_and_persist
 from delapan.store import get_store
 
 from .banner import DELAPAN_BANNER
@@ -41,50 +40,6 @@ mcp = FastMCP("delapan")
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _render_content(content: Any) -> str:
-    """Render a finding's free-form ``content`` dict to a markdown body.
-
-    Findings carry content as a dict; persistence keeps a human/LLM-friendly text
-    rendering. Mirrors ``tools/explore.py::_render_content`` verbatim so the
-    persisted shape is identical to the cloud author path."""
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, dict):
-        return str(content)
-    if not content:
-        return ""
-
-    if len(content) == 1:
-        only = next(iter(content.values()))
-        if isinstance(only, str):
-            return only
-
-    lines: list[str] = []
-    for key, value in content.items():
-        label = key.replace("_", " ").title()
-        if isinstance(value, (list, dict)):
-            lines.append(f"**{label}**:")
-            lines.append("```json")
-            lines.append(json.dumps(value, indent=2))
-            lines.append("```")
-        else:
-            lines.append(f"**{label}**: {value}")
-    return "\n".join(lines)
-
-
-def _normalize_provenance(provenance: Any) -> list[dict]:
-    """Findings carry ``[{url, query}]``; keep that shape, stamp ``accessed_at``."""
-    if not provenance:
-        return []
-    out: list[dict] = []
-    for p in provenance:
-        if isinstance(p, dict):
-            entry = dict(p)
-            entry.setdefault("accessed_at", _now_iso())
-            out.append(entry)
-    return out
 
 
 # --- Inject → this conversation --------------------------------------------
@@ -153,32 +108,8 @@ async def delapan_explore(
         )
         captured = findings[:cap]
 
-        ids: list[str] = []
-        if captured:
-            # Reuse tools/explore.py's row-building + embedding sequence: render
-            # each content dict to a markdown body, embed the bodies in one batch,
-            # then build rows matching the Store's insert_findings shape.
-            rows: list[dict] = []
-            contents: list[str] = []
-            for f in captured:
-                body = _render_content(f.content)
-                rows.append(
-                    {
-                        "org_id": ctx.org_id,
-                        "kb_id": ctx.kb_id,
-                        "title": f.title,
-                        "content": body,
-                        "category": f.category,
-                        "confidence": (float(f.confidence) if f.confidence is not None else None),
-                        "tags": list(f.tags or []),
-                        "provenance": _normalize_provenance(f.provenance),
-                    }
-                )
-                contents.append(body)
-            embeddings = await embed_batch(contents)
-            for row, emb in zip(rows, embeddings):
-                row["embedding"] = emb
-            ids = await store.insert_findings(rows)
+        outcome = await resolve_and_persist(ctx, store, captured, get_config())
+        ids = outcome.affected_finding_ids
 
         store.update_exploration(
             exp_id, status="completed", completed_at=_now_iso(), finding_ids=ids

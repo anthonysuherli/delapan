@@ -43,6 +43,36 @@ class Store(Protocol):
         """Insert already-embedded finding rows; return the new ids in order."""
         ...
 
+    async def update_finding(
+        self,
+        kb_id: str,
+        finding_id: str,
+        *,
+        content=None,
+        confidence=None,
+        provenance=None,
+        embedding=None,
+        title: str | None = None,
+    ) -> None:
+        """Partial in-place update, keeping the id STABLE (so KG `grounded_in`
+        references stay valid). Every field is optional; ``None`` means KEEP the
+        current value. Re-indexes the embedding when one is given."""
+        ...
+
+    async def invalidate_finding(
+        self, kb_id: str, finding_id: str, *, superseded_by: str | None = None
+    ) -> None:
+        """Retire a finding in place (no insert): stamp `invalidated_at` and an
+        optional forward pointer. It disappears from match/list/count but stays
+        readable via `get_finding`. Findings are never deleted to dedup them."""
+        ...
+
+    async def supersede_finding(self, kb_id: str, target_id: str, new_row: dict) -> str:
+        """Insert `new_row` and retire `target_id` pointing at it, atomically.
+        Returns the new finding id. Raises if the target is absent or already
+        retired — leaving the KB unchanged."""
+        ...
+
     def get_finding(self, kb_id: str, finding_id: str) -> dict:
         """One finding scoped to `kb_id`. Raises if not found."""
         ...
@@ -58,12 +88,18 @@ class Store(Protocol):
         ...
 
     def list_findings(
-        self, kb_id: str, category: str | None = None, limit: int | None = None
+        self,
+        kb_id: str,
+        category: str | None = None,
+        limit: int | None = None,
+        include_invalidated: bool = False,
     ) -> dict:
         """Most-recent findings in `kb_id`. Returns {"count", "total", "findings"}.
 
-        ``count`` is rows returned (bounded by `limit`); ``total`` is rows matching
-        `kb_id` + `category` regardless of `limit`."""
+        Live rows only unless `include_invalidated` — retired rows stay
+        reachable for history/audit, never for retrieval. ``count`` is rows
+        returned (bounded by `limit`); ``total`` is rows matching `kb_id` +
+        `category` + the live-only filter, regardless of `limit`."""
         ...
 
     def delete_finding(self, kb_id: str, finding_id: str) -> dict:
@@ -71,7 +107,7 @@ class Store(Protocol):
         ...
 
     def count_findings(self, kb_id: str) -> int:
-        """Exact number of findings in `kb_id` (uncapped, unlike list_findings)."""
+        """Exact number of LIVE findings in `kb_id` (uncapped, unlike list_findings)."""
         ...
 
     # --- synopsis spine ------------------------------------------------------
@@ -288,4 +324,22 @@ class Store(Protocol):
         query_text: str | None = None,
     ) -> None:
         """Append access events. Best-effort by contract — must never raise."""
+        ...
+
+    # --- resolution event log (memory write decisions) -----------------------
+    # Append-only observability for the mem0-style resolver: one row per applied
+    # decision (ADD/UPDATE/NOOP/SUPERSEDE). Never load-bearing for retrieval.
+
+    async def insert_resolution_events(self, kb_id: str, events: list[dict]) -> None:
+        """Append resolution decision rows. Best-effort by contract.
+
+        Each row carries ``op, candidate_title, target_finding_id, new_finding_id,
+        details, reason``; ``op`` is one of ADD/UPDATE/NOOP/SUPERSEDE. ``details``
+        is an op-specific JSON blob. No-op on an empty list."""
+        ...
+
+    def list_resolution_events(self, kb_id: str, limit: int | None = None) -> list[dict]:
+        """Most-recent resolution events in ``kb_id`` (newest first). Rows carry
+        ``id, op, candidate_title, target_finding_id, new_finding_id, details,
+        reason, created_at``. ``limit`` defaults to 50; hard-capped at 500."""
         ...

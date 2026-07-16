@@ -106,6 +106,36 @@ async def test_get_finding_global_ignores_kb_scope(store):
 
 
 @pytest.mark.asyncio
+async def test_string_content_roundtrips_not_empty(store):
+    """Explore persists content as a rendered markdown STRING; it must read back
+    as that string, not {} (regression: _json_load JSON-parsed the markdown and
+    fell back to the empty default, silently dropping the finding body)."""
+    org_id, project_id = store.resolve_project("repoStr", create=True)
+    kb_id = store.resolve_kb(org_id, project_id, "main", create=True)
+    body = "**Plan**: free tier ~1000 searches/mo"
+    emb = [0.03] * 1536
+    ids = await store.insert_findings(
+        [
+            {
+                "org_id": org_id,
+                "kb_id": kb_id,
+                "title": "Tavily pricing",
+                "content": body,
+                "category": "fact",
+                "confidence": 0.7,
+                "tags": [],
+                "provenance": [],
+                "embedding": emb,
+            }
+        ]
+    )
+    got = store.get_finding(kb_id, ids[0])
+    assert got["content"] == body  # not {}
+    hits = await store.match_findings(kb_id, emb, match_count=1, min_similarity=0.0)
+    assert hits[0]["content"] == body
+
+
+@pytest.mark.asyncio
 async def test_list_findings_returns_more_than_the_old_100_cap(store):
     org_id, project_id = store.resolve_project("repoCap", create=True)
     kb_id = store.resolve_kb(org_id, project_id, "main", create=True)

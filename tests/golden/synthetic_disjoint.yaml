@@ -1,0 +1,29 @@
+# Golden set: two disjoint topics. A query about topic A must not band topic B's
+# findings, and an unrelated query must return `gap`.
+# Vectors live in the sidecar (synthetic_disjoint.vectors.json) keyed by id.
+name: synthetic_disjoint
+embedding_model: synthetic  # hand-built unit vectors; no live model involved
+findings:
+  - id: a1
+    title: Tavily search pricing
+    content: Free tier is 1000 requests per month.
+    category: fact
+  - id: a2
+    title: Tavily search depth
+    content: advanced mode costs 2 credits per query.
+    category: fact
+  - id: b1
+    title: Postgres vector index
+    content: HNSW is the default pgvector index.
+    category: fact
+queries:
+  - query: what does tavily cost
+    expect_verdict: sparse
+    # actual cosine order: a2's jitter dimension partially aligns with the
+    # query's jitter dimension, so a2 ranks above a1 despite a1 being the
+    # "pure" match — verified against real vec_distance_cosine output, not
+    # assumed from the vector construction.
+    expect_top_ids: [a2, a1]
+  - query: unrelated to anything in this kb
+    expect_verdict: gap
+    expect_top_ids: []
