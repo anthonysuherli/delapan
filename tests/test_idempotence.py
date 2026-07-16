@@ -61,6 +61,23 @@ async def test_second_pass_with_noop_resolver_is_a_true_no_write(store, monkeypa
     assert live_before == 2
 
     fid_a, fid_b = out1.affected_finding_ids
+
+    # Attribution: fid_a/fid_b must map to the FIRST/SECOND candidate respectively,
+    # not just "some id from the batch" — the add_events/new_ids zip in persist.py
+    # is positional, and a 2-item batch is the smallest case where misalignment
+    # would show up (a 1-item batch is trivially "aligned").
+    assert store.get_finding(kb, fid_a)["title"] == batch[0].title
+    assert store.get_finding(kb, fid_b)["title"] == batch[1].title
+
+    # Cross-check via the resolution-event log: each ADD event's new_finding_id
+    # must map back to the same candidate_title, directly proving the
+    # add_events/new_ids zip stayed aligned for this batch.
+    events_by_new_id = {
+        e["new_finding_id"]: e["candidate_title"] for e in store.list_resolution_events(kb)
+    }
+    assert events_by_new_id[fid_a] == batch[0].title
+    assert events_by_new_id[fid_b] == batch[1].title
+
     snapshot_a = store.get_finding(kb, fid_a)
     snapshot_b = store.get_finding(kb, fid_b)
 
