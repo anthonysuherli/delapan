@@ -17,6 +17,7 @@ query the preamble is synopsis-only and works keyless (coverage = "gap").
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -24,7 +25,8 @@ from fastapi.responses import JSONResponse
 
 from delapan.api.deps import resolve_kb_or_404
 from delapan.core.agent.preamble import select_preamble
-from delapan.core.config import get_settings
+from delapan.core.config import get_config, get_settings
+from delapan.core.curation.backlog import rank_backlog
 
 router = APIRouter(prefix="/api/projects/{project}/kbs/{kb}")
 
@@ -84,3 +86,12 @@ async def resume(
         surface="resume", org_id=ctx.org_id,
     )
     return JSONResponse({"preamble": preamble, "coverage": coverage})
+
+
+@router.get("/backlog")
+async def backlog(project: str, kb: str, limit: int | None = None) -> JSONResponse:
+    ctx, store = resolve_kb_or_404(project, kb)
+    cfg = get_config().curation
+    rows = await store.list_curation_topics(ctx.kb_id, limit=limit or cfg.backlog_limit)
+    ranked = rank_backlog(rows or [], cfg, datetime.now(timezone.utc))
+    return JSONResponse({"topics": ranked[: (limit or cfg.backlog_limit)]})
