@@ -29,6 +29,7 @@ connection is simplest and correct here. ``tags``/``provenance``/``content``/
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import uuid
@@ -37,6 +38,8 @@ from pathlib import Path
 
 import sqlite_vec
 from sqlite_vec import serialize_float32
+
+logger = logging.getLogger(__name__)
 
 # Synthetic single-tenant org for the local tier.
 _ORG = "local"
@@ -113,6 +116,11 @@ CREATE TABLE IF NOT EXISTS kg_schemas (
   id TEXT PRIMARY KEY, org_id TEXT NOT NULL, kb_id TEXT NOT NULL,
   version INTEGER NOT NULL DEFAULT 1, schema TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_kg_schemas_kb_version ON kg_schemas(kb_id, version);
+CREATE TABLE IF NOT EXISTS resolution_events (
+  id TEXT PRIMARY KEY, org_id TEXT, kb_id TEXT NOT NULL,
+  op TEXT NOT NULL, candidate_title TEXT, target_finding_id TEXT,
+  reason TEXT, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_resolution_events_kb ON resolution_events(kb_id);
 """
 
 # Post-schema migrations: ADD COLUMN statements for older DBs.
@@ -298,6 +306,40 @@ class SQLiteStore:
                 )
         self._conn.commit()
         return ids
+
+    async def update_finding(
+        self,
+        kb_id: str,
+        finding_id: str,
+        *,
+        content,
+        confidence,
+        provenance,
+        embedding,
+        title: str | None = None,
+    ) -> None:
+        """In-place overwrite + re-embed; id stays stable. JSON-encodes content/
+        provenance; replaces the ``vec_findings`` row when an embedding is given."""
+        sets = ["content = ?", "confidence = ?", "provenance = ?"]
+        vals: list[object] = [
+            _json_dump_maybe(content),
+            confidence,
+            json.dumps(list(provenance or [])),
+        ]
+        if title is not None:
+            sets.append("title = ?")
+            vals.append(title)
+        self._conn.execute(
+            f"UPDATE findings SET {', '.join(sets)} WHERE id = ? AND kb_id = ?;",
+            (*vals, finding_id, kb_id),
+        )
+        if embedding is not None:
+            self._conn.execute("DELETE FROM vec_findings WHERE finding_id = ?;", (finding_id,))
+            self._conn.execute(
+                "INSERT INTO vec_findings (finding_id, embedding) VALUES (?, ?);",
+                (finding_id, serialize_float32(list(embedding))),
+            )
+        self._conn.commit()
 
     def get_finding(self, kb_id: str, finding_id: str) -> dict:
         """One finding scoped to `kb_id`. Raises if absent. JSON cols decoded."""
@@ -1037,6 +1079,57 @@ class SQLiteStore:
             self._conn.commit()
         except Exception:  # noqa: BLE001 — column may not exist yet
             pass
+
+    # --- resolution event log ------------------------------------------------
+
+    async def insert_resolution_events(self, kb_id: str, events: list[dict]) -> None:
+        """Append resolution decision rows; org forced ``"local"``. Best-effort:
+        an audit-log write must never break the caller, so failures are logged
+        and swallowed. No-op when empty."""
+        if not events:
+            return
+        try:
+            for e in events:
+                self._conn.execute(
+                    """
+                    INSERT INTO resolution_events
+                      (id, org_id, kb_id, op, candidate_title, target_finding_id, reason, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (
+                        uuid.uuid4().hex,
+                        _ORG,
+                        kb_id,
+                        e.get("op"),
+                        e.get("candidate_title"),
+                        e.get("target_finding_id"),
+                        e.get("reason"),
+                        _now_iso(),
+                    ),
+                )
+            self._conn.commit()
+        except Exception:  # noqa: BLE001 — audit log is best-effort; never break the caller
+            logger.warning("failed to write resolution_events for kb=%s", kb_id, exc_info=True)
+
+    def list_resolution_events(self, kb_id: str, limit: int | None = None) -> list[dict]:
+        """Most-recent resolution events for `kb_id`, newest first (cap 500)."""
+        n = min(limit or 50, 500)
+        rows = self._conn.execute(
+            "SELECT id, op, candidate_title, target_finding_id, reason, created_at "
+            "FROM resolution_events WHERE kb_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?;",
+            (kb_id, n),
+        ).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "op": r["op"],
+                "candidate_title": r["candidate_title"],
+                "target_finding_id": r["target_finding_id"],
+                "reason": r["reason"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
 
     # --- monitoring — best-effort --------------------------------------------
 
