@@ -143,7 +143,7 @@ knowledge_graph:
 # Memory resolution — decide ADD/UPDATE/NOOP/DELETE per new finding against the
 # top-k existing findings before persisting. enabled=false → pure ADD (append).
 memory:
-  enabled: true
+  enabled: false  # flipped true at plan Task 8 (local tier only; cloud is guarded)
   resolution_model: anthropic/claude-sonnet-4.6   # cheaper than the KG's Opus; runs every explore
   resolution_fallback_model: openai/gpt-5.4-mini
   temperature: 0.0

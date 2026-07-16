@@ -1,16 +1,15 @@
-"""Memory resolver — decide ADD/UPDATE/NOOP/DELETE per candidate finding.
+"""Memory resolver — decide ADD/UPDATE/NOOP/SUPERSEDE per candidate finding.
 
     candidates + neighbors ─► one LLM pass ─► [ResolutionDecision…]
 
 Ported pattern from mem0's update-memory step (no mem0 dependency): for each new
 candidate, retrieve the top-k semantically similar EXISTING findings and let the
 model decide whether it is new (ADD), refines one (UPDATE), duplicates one (NOOP),
-or contradicts one (DELETE). Tier-agnostic: uses only the Store contract.
+or contradicts one (SUPERSEDE). Tier-agnostic: uses only the Store contract.
 
-Neighbor bodies are unreliable on the local tier (explore-persisted findings read
-back with content={}), so the prompt leans on neighbor TITLES + similarity;
-candidate bodies are always real. Any failure defaults to ADD — a resolver
-failure must never drop a finding.
+Neighbor bodies round-trip correctly on both tiers, so the prompt shows the
+model each neighbor's title AND body (same 600-char budget as candidates).
+Any failure defaults to ADD — a resolver failure must never drop a finding.
 """
 
 from __future__ import annotations
@@ -48,6 +47,9 @@ def _candidate_block(i: int, f: Finding, neighbors: list[dict]) -> str:
     for n in neighbors:
         sim = round(float(n.get("similarity", 0.0)), 3)
         lines.append(f"  - id={n.get('id')} sim={sim} title={n.get('title')!r}")
+        n_body = render_content(n.get("content"))[:600]
+        if n_body:
+            lines.append(f"    body: {n_body}")
     return "\n".join(lines)
 
 

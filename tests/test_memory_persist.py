@@ -24,6 +24,7 @@ async def test_add_then_update_no_duplicate(store, monkeypatch):
         return [[0.01] * 1536 for _ in texts]
 
     monkeypatch.setattr(persist_mod, "embed_batch", _fake_embed)
+    monkeypatch.setenv("DLP_MEMORY__ENABLED", "true")
     get_config.cache_clear()
     cfg = get_config()
 
@@ -54,6 +55,7 @@ async def test_add_then_update_no_duplicate(store, monkeypatch):
     assert store.get_finding(kb, fid)["title"] == "Tavily pricing (updated)"
     evs = store.list_resolution_events(kb)
     assert any(e["op"] == "UPDATE" for e in evs)
+    get_config.cache_clear()
 
 
 @pytest.mark.asyncio

@@ -378,7 +378,7 @@ class MemoryConfig(BaseModel):
     against the top-k existing findings before persisting. Disabled → pure ADD
     (today's append behavior). Models are AI Gateway slugs (dots for versions)."""
 
-    enabled: bool = True  # kill-switch: false → pure ADD, no resolver call
+    enabled: bool = False  # kill-switch: false → pure ADD, no resolver call
     resolution_model: str = "anthropic/claude-sonnet-4.6"
     resolution_fallback_model: str = "openai/gpt-5.4-mini"
     temperature: float = 0.0
