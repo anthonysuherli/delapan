@@ -168,7 +168,12 @@ class SupabaseStore:
         findings = [{"id": r["id"], "title": r["title"], "category": r["category"],
                      "confidence": r["confidence"], "tags": r.get("tags") or [],
                      "created_at": r["created_at"]} for r in rows]
-        return {"count": len(findings), "findings": findings}
+
+        cq = self._c.table("findings").select("id", count="exact").eq("kb_id", kb_id)
+        if category:
+            cq = cq.eq("category", category)
+        total = int(cq.execute().count or 0)
+        return {"count": len(findings), "total": total, "findings": findings}
 
     def count_findings(self, kb_id: str) -> int:
         res = (self._c.table("findings").select("id", count="exact")

@@ -128,3 +128,33 @@ async def test_list_findings_returns_more_than_the_old_100_cap(store):
     got = store.list_findings(kb_id, limit=1000)
     assert got["count"] == 120
     assert len(got["findings"]) == 120
+
+
+@pytest.mark.asyncio
+async def test_list_findings_total_is_uncapped_and_respects_category(store):
+    org_id, project_id = store.resolve_project("repoTotal", create=True)
+    kb_id = store.resolve_kb(org_id, project_id, "main", create=True)
+    rows = [
+        {
+            "id": f"g{i:07d}",
+            "org_id": org_id,
+            "kb_id": kb_id,
+            "title": f"T{i}",
+            "content": {"summary": "s"},
+            "category": "research" if i < 4 else "fact",
+            "confidence": 0.5,
+            "tags": [],
+            "provenance": [],
+            "embedding": [0.01] * 1536,
+        }
+        for i in range(10)
+    ]
+    await store.insert_findings(rows)
+
+    got = store.list_findings(kb_id, limit=3)
+    assert got["count"] == 3, "count is rows returned"
+    assert got["total"] == 10, "total ignores limit"
+
+    scoped = store.list_findings(kb_id, category="research", limit=2)
+    assert scoped["count"] == 2
+    assert scoped["total"] == 4, "total honours the category filter"

@@ -326,19 +326,24 @@ class SQLiteStore:
     def list_findings(
         self, kb_id: str, category: str | None = None, limit: int | None = None
     ) -> dict:
-        """Most-recent findings in `kb_id`. Returns {"count", "findings"}.
+        """Most-recent findings in `kb_id`. Returns {"count", "total", "findings"}.
 
         List view omits ``content``/``provenance`` (matching SupabaseStore);
-        optional category filter; default/max limits mirror findings/service."""
+        optional category filter; default/max limits mirror findings/service.
+        ``count`` is rows returned, ``total`` is rows matching regardless of
+        ``limit`` — the client needs both to tell truncation from completeness."""
         n = min(limit or LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT)
-        sql = f"SELECT {', '.join(_FINDING_LIST_COLS)} FROM findings WHERE kb_id = ?"
+        where = "WHERE kb_id = ?"
         params: list[object] = [kb_id]
         if category:
-            sql += " AND category = ?"
+            where += " AND category = ?"
             params.append(category)
-        sql += " ORDER BY created_at DESC LIMIT ?;"
-        params.append(n)
-        rows = self._conn.execute(sql, params).fetchall()
+
+        sql = (
+            f"SELECT {', '.join(_FINDING_LIST_COLS)} FROM findings {where} "
+            "ORDER BY created_at DESC LIMIT ?;"
+        )
+        rows = self._conn.execute(sql, (*params, n)).fetchall()
         findings = [
             {
                 "id": r["id"],
@@ -350,7 +355,13 @@ class SQLiteStore:
             }
             for r in rows
         ]
-        return {"count": len(findings), "findings": findings}
+
+        total = int(
+            self._conn.execute(
+                f"SELECT COUNT(*) AS n FROM findings {where};", tuple(params)
+            ).fetchone()["n"]
+        )
+        return {"count": len(findings), "total": total, "findings": findings}
 
     def count_findings(self, kb_id: str) -> int:
         """Exact finding count for `kb_id` (uncapped, unlike list_findings)."""

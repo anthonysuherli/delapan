@@ -60,7 +60,10 @@ class Store(Protocol):
     def list_findings(
         self, kb_id: str, category: str | None = None, limit: int | None = None
     ) -> dict:
-        """Most-recent findings in `kb_id`. Returns {"count", "findings"}."""
+        """Most-recent findings in `kb_id`. Returns {"count", "total", "findings"}.
+
+        ``count`` is rows returned (bounded by `limit`); ``total`` is rows matching
+        `kb_id` + `category` regardless of `limit`."""
         ...
 
     def delete_finding(self, kb_id: str, finding_id: str) -> dict:
