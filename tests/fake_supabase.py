@@ -103,6 +103,7 @@ class _Query:
 class _Table:
     def __init__(self, rows):
         self._rows = rows
+        self.last_insert = None
 
     def select(self, *_cols, count=None):
         q = _Query(self, "select")
@@ -110,6 +111,10 @@ class _Table:
         return q
 
     def insert(self, payload):
+        if isinstance(payload, dict):
+            self.last_insert = payload
+        else:
+            self.last_insert = payload[0] if payload else None
         return _Query(self, "insert", payload)
 
     def upsert(self, payload, on_conflict=None):
@@ -127,17 +132,24 @@ class _Table:
 class FakeSupabase:
     def __init__(self):
         self.tables: dict[str, list[dict]] = {}
+        self._table_objs: dict[str, _Table] = {}
         self._rpcs = {}
+        self.last_rpc = None  # (name, params) from the most recent rpc() call
 
     def table(self, name):
-        return _Table(self.tables.setdefault(name, []))
+        # Cached per name so state set on one call (e.g. last_insert) is visible
+        # to a later `fake.table(name)` lookup in a test.
+        if name not in self._table_objs:
+            self._table_objs[name] = _Table(self.tables.setdefault(name, []))
+        return self._table_objs[name]
 
     def register_rpc(self, name, fn):
         self._rpcs[name] = fn
 
     def rpc(self, name, params):
-        fn = self._rpcs[name]
-        return _RpcResp(fn(params))
+        self.last_rpc = (name, params)
+        fn = self._rpcs.get(name)
+        return _RpcResp(fn(params) if fn else None)
 
 
 class _RpcResp:
