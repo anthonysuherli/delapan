@@ -80,6 +80,28 @@ def _finding_from_row(r) -> dict:
     }
 _FINDING_MATCH_COLS = ("id", "title", "content", "category", "confidence", "tags", "provenance")
 
+# Column list for curation_topics reads (match_curation_topics + list_curation_topics).
+_TOPIC_COLS = (
+    "t.id, t.query_text, t.query_norm, t.coverage, t.recurrence, "
+    "t.first_seen, t.last_seen, t.consumed_at, t.resolved_at"
+)
+
+
+def _topic_from_row(r) -> dict:
+    """curation_topics row → the tier-parity dict shape."""
+    return {
+        "id": r["id"],
+        "query_text": r["query_text"],
+        "query_norm": r["query_norm"],
+        "coverage": r["coverage"],
+        "recurrence": r["recurrence"],
+        "first_seen": r["first_seen"],
+        "last_seen": r["last_seen"],
+        "consumed_at": r["consumed_at"],
+        "resolved_at": r["resolved_at"],
+    }
+
+
 LIST_DEFAULT_LIMIT = 20
 LIST_MAX_LIMIT = 100
 
@@ -121,6 +143,19 @@ CREATE TABLE IF NOT EXISTS resolution_events (
   op TEXT NOT NULL, candidate_title TEXT, target_finding_id TEXT,
   reason TEXT, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_resolution_events_kb ON resolution_events(kb_id);
+CREATE TABLE IF NOT EXISTS access_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, org_id TEXT NOT NULL, kb_id TEXT NOT NULL,
+  target_type TEXT NOT NULL, target_id TEXT, surface TEXT NOT NULL, api_key_id TEXT,
+  query_text TEXT, coverage TEXT, band_counts TEXT, ts TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_access_events_kb_ts ON access_events(kb_id, ts);
+CREATE TABLE IF NOT EXISTS curation_topics (
+  id TEXT PRIMARY KEY, org_id TEXT NOT NULL, kb_id TEXT NOT NULL,
+  query_text TEXT NOT NULL, query_norm TEXT NOT NULL, coverage TEXT NOT NULL,
+  recurrence INTEGER NOT NULL DEFAULT 1,
+  first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, consumed_at TEXT, resolved_at TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_curation_topics_norm ON curation_topics(kb_id, query_norm);
+CREATE INDEX IF NOT EXISTS idx_curation_topics_kb ON curation_topics(kb_id);
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_curation_topics USING vec0(topic_id TEXT, embedding float[1536]);
 """
 
 # Post-schema migrations: ADD COLUMN statements for older DBs.
@@ -1139,11 +1174,152 @@ class SQLiteStore:
         org_id: str,
         kb_id: str,
         surface: str,
-        targets,
+        targets: list,
         query_text: str | None = None,
+        coverage: str | None = None,
+        band_counts: dict | None = None,
     ) -> None:
-        """No-op locally — access monitoring is a cloud-tier (billing) concern."""
-        return None
+        """Append one access event. Never raises (monitoring must not break callers).
+
+        Access events are no longer only a cloud billing concern — they are the
+        curation flywheel's ground truth, so the local tier persists them too.
+        `targets` is accepted for Protocol parity and not written: this is the
+        query-level row (`target_type='query'`), mirroring the cloud shape."""
+        try:
+            self._conn.execute(
+                "INSERT INTO access_events (org_id, kb_id, target_type, target_id, "
+                "surface, query_text, coverage, band_counts, ts) VALUES (?,?,?,?,?,?,?,?,?);",
+                (
+                    _ORG,
+                    kb_id,
+                    "query",
+                    None,
+                    surface,
+                    query_text,
+                    coverage,
+                    json.dumps(band_counts) if band_counts is not None else None,
+                    _now_iso(),
+                ),
+            )
+            self._conn.commit()
+        except Exception:  # noqa: BLE001 — monitoring must never break the caller
+            pass
+
+    # --- curation flywheel ---------------------------------------------------
+
+    async def match_curation_topics(
+        self, kb_id: str, query_embedding: list[float], match_count: int, min_similarity: float
+    ) -> list[dict]:
+        """Cosine KNN over vec_curation_topics joined to curation_topics; rows
+        carry `similarity`, filtered by `min_similarity`."""
+        q = serialize_float32(query_embedding)
+        rows = self._conn.execute(
+            f"""
+            SELECT {_TOPIC_COLS}, vec_distance_cosine(v.embedding, ?) AS dist
+            FROM vec_curation_topics v JOIN curation_topics t ON t.id = v.topic_id
+            WHERE t.kb_id = ? ORDER BY dist LIMIT ?;
+            """,
+            (q, kb_id, match_count),
+        ).fetchall()
+        out: list[dict] = []
+        for r in rows:
+            similarity = 1.0 - float(r["dist"])
+            if similarity < min_similarity:
+                continue
+            out.append({**_topic_from_row(r), "similarity": similarity})
+        return out
+
+    async def upsert_curation_topic(self, row: dict) -> str:
+        """Insert-or-increment on (kb_id, query_norm). The unique index is the race
+        fix — no lock, and the increment is done in SQL so it can't lose an update."""
+        seen = row.get("seen_at") or _now_iso()
+        new_id = uuid.uuid4().hex
+        self._conn.execute(
+            """
+            INSERT INTO curation_topics (id, org_id, kb_id, query_text, query_norm,
+                                         coverage, first_seen, last_seen)
+            VALUES (?,?,?,?,?,?,?,?)
+            ON CONFLICT(kb_id, query_norm) DO UPDATE SET
+              recurrence = recurrence + 1, last_seen = excluded.last_seen,
+              coverage = excluded.coverage, consumed_at = NULL, resolved_at = NULL;
+            """,
+            (
+                new_id,
+                _ORG,
+                row["kb_id"],
+                row["query_text"],
+                row["query_norm"],
+                row["coverage"],
+                seen,
+                seen,
+            ),
+        )
+        tid = self._conn.execute(
+            "SELECT id FROM curation_topics WHERE kb_id = ? AND query_norm = ?;",
+            (row["kb_id"], row["query_norm"]),
+        ).fetchone()["id"]
+        if tid == new_id and row.get("embedding"):  # freshly inserted → index it
+            self._conn.execute(
+                "INSERT INTO vec_curation_topics (topic_id, embedding) VALUES (?, ?);",
+                (tid, serialize_float32(row["embedding"])),
+            )
+        self._conn.commit()
+        return tid
+
+    async def bump_curation_topic(
+        self, kb_id: str, topic_id: str, *, coverage: str, seen_at: str
+    ) -> None:
+        """Increment `recurrence` in SQL and refresh `last_seen`/`coverage`,
+        clearing `consumed_at`/`resolved_at` — the vector-hit path's counterpart
+        to `upsert_curation_topic`'s conflict arm."""
+        self._conn.execute(
+            "UPDATE curation_topics SET recurrence = recurrence + 1, last_seen = ?, "
+            "coverage = ?, consumed_at = NULL, resolved_at = NULL "
+            "WHERE id = ? AND kb_id = ?;",
+            (seen_at, coverage, topic_id, kb_id),
+        )
+        self._conn.commit()
+
+    async def update_curation_topic(self, kb_id: str, topic_id: str, **patch) -> None:
+        """Patch stamp columns (`consumed_at`, `resolved_at`). Values are written
+        verbatim; `None` clears."""
+        allowed = {"consumed_at", "resolved_at"}
+        keys = [k for k in patch if k in allowed]
+        if not keys:
+            return
+        sets = ", ".join(f"{k} = ?" for k in keys)
+        self._conn.execute(
+            f"UPDATE curation_topics SET {sets} WHERE id = ? AND kb_id = ?;",
+            [*(patch[k] for k in keys), topic_id, kb_id],
+        )
+        self._conn.commit()
+
+    async def list_curation_topics(
+        self, kb_id: str, *, include_closed: bool = False, limit: int | None = None
+    ) -> list[dict]:
+        """Topics for `kb_id`. Open-only by default (`consumed_at IS NULL AND
+        resolved_at IS NULL`); newest-seen first, capped at 500."""
+        where = "t.kb_id = ?"
+        if not include_closed:
+            where += " AND t.consumed_at IS NULL AND t.resolved_at IS NULL"
+        rows = self._conn.execute(
+            f"SELECT {_TOPIC_COLS} FROM curation_topics t WHERE {where} "
+            f"ORDER BY t.last_seen DESC LIMIT ?;",
+            (kb_id, min(limit or 100, 500)),
+        ).fetchall()
+        return [_topic_from_row(r) for r in rows]
+
+    async def prune_access_events(self, kb_id: str, older_than_iso: str) -> None:
+        """Delete this KB's access events older than `older_than_iso`. Best-effort:
+        never raises."""
+        try:
+            self._conn.execute(
+                "DELETE FROM access_events WHERE kb_id = ? AND ts < ?;",
+                (kb_id, older_than_iso),
+            )
+            self._conn.commit()
+        except Exception:  # noqa: BLE001 — best-effort
+            pass
 
 
 def _json_dump_maybe(value) -> str | None:
