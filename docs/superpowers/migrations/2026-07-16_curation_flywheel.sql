@@ -12,8 +12,10 @@ create index if not exists idx_access_events_kb_ts on access_events (kb_id, ts);
 
 -- 2. access_events RLS is SELECT-only today — writes and prunes are silently
 --    rejected. Mirror the findings table's membership-based policies.
+drop policy if exists "access_events_insert" on access_events;
 create policy access_events_insert on access_events for insert
   with check (org_id in (select org_id from org_members where user_id = auth.uid()));
+drop policy if exists "access_events_delete" on access_events;
 create policy access_events_delete on access_events for delete
   using (org_id in (select org_id from org_members where user_id = auth.uid()));
 
@@ -36,6 +38,7 @@ create index if not exists idx_curation_topics_open on curation_topics (kb_id)
   where consumed_at is null and resolved_at is null;
 
 alter table curation_topics enable row level security;
+drop policy if exists "curation_topics_org" on curation_topics;
 create policy curation_topics_org on curation_topics for all
   using      (org_id in (select org_id from org_members where user_id = auth.uid()))
   with check (org_id in (select org_id from org_members where user_id = auth.uid()));

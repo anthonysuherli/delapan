@@ -92,6 +92,6 @@ async def resume(
 async def backlog(project: str, kb: str, limit: int | None = None) -> JSONResponse:
     ctx, store = resolve_kb_or_404(project, kb)
     cfg = get_config().curation
-    rows = await store.list_curation_topics(ctx.kb_id, limit=limit or cfg.backlog_limit)
+    rows = await store.list_curation_topics(ctx.kb_id, limit=500)
     ranked = rank_backlog(rows or [], cfg, datetime.now(timezone.utc))
     return JSONResponse({"topics": ranked[: (limit or cfg.backlog_limit)]})

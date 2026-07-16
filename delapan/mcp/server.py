@@ -111,15 +111,17 @@ async def delapan_search(project: str, kb: str, query: str, limit: int | None = 
 async def delapan_backlog(project: str, kb: str, limit: int | None = None) -> dict:
     """The KB's curation backlog — gap/sparse queries it was asked and could not
     answer, ranked by recurrence × severity × recency. Returns ``{"topics": [...]}``,
-    each with ``id, query_text, coverage, recurrence, last_seen, score``. Feed the
-    top one to ``delapan_explore`` (or call explore with no prompt to consume it)."""
+    each entry the full topic row (``id, query_text, query_norm, coverage,
+    recurrence, first_seen, last_seen, consumed_at, resolved_at``, etc.) plus a
+    computed ``score``. Feed the top one to ``delapan_explore`` (or call explore
+    with no prompt to consume it)."""
     try:
         ctx = resolve_tenant(project, kb, create=False)
     except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
         return {"error": f"KB not found ({project}/{kb}): {exc}"}
     store = get_store(ctx.access_token, org_id=ctx.org_id)
     cfg = get_config().curation
-    rows = await store.list_curation_topics(ctx.kb_id, limit=limit or cfg.backlog_limit)
+    rows = await store.list_curation_topics(ctx.kb_id, limit=500)
     ranked = rank_backlog(rows or [], cfg, datetime.now(timezone.utc))
     return {"topics": ranked[: (limit or cfg.backlog_limit)]}
 
@@ -147,7 +149,7 @@ async def delapan_explore(
             return {"error": f"KB not found ({project}/{kb}): {exc}"}
         store = get_store(ctx.access_token, org_id=ctx.org_id)
         cur = get_config().curation
-        rows = await store.list_curation_topics(ctx.kb_id, limit=cur.backlog_limit)
+        rows = await store.list_curation_topics(ctx.kb_id, limit=500)
         ranked = rank_backlog(rows or [], cur, datetime.now(timezone.utc))
         if not ranked:
             return {

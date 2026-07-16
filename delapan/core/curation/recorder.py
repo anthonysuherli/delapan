@@ -149,6 +149,14 @@ async def _advance_topic(
         await store.bump_curation_topic(kb_id, hit["id"], coverage=coverage, seen_at=now)
         return
 
+    # No vector hit → treated as a new topic. Two near-simultaneous recordings of
+    # semantically-equivalent but differently-normalized queries can both miss
+    # here and each insert their own topic (the unique index on
+    # (kb_id, query_norm) only catches identical normalized text, not
+    # paraphrases) — producing two topics for one real gap. This is an accepted,
+    # self-healing tradeoff, not a bug: `rank_backlog` tolerates duplicate
+    # topics, a future vector hit collapses onto whichever topic survives, and
+    # the loser ages out. Do not "fix" this with cross-process locking.
     await store.upsert_curation_topic(
         {
             "org_id": org_id,

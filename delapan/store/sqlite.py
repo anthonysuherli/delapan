@@ -1234,36 +1234,40 @@ class SQLiteStore:
         fix — no lock, and the increment is done in SQL so it can't lose an update."""
         seen = row.get("seen_at") or _now_iso()
         new_id = uuid.uuid4().hex
-        self._conn.execute(
-            """
-            INSERT INTO curation_topics (id, org_id, kb_id, query_text, query_norm,
-                                         coverage, first_seen, last_seen)
-            VALUES (?,?,?,?,?,?,?,?)
-            ON CONFLICT(kb_id, query_norm) DO UPDATE SET
-              recurrence = recurrence + 1, last_seen = excluded.last_seen,
-              coverage = excluded.coverage, consumed_at = NULL, resolved_at = NULL;
-            """,
-            (
-                new_id,
-                _ORG,
-                row["kb_id"],
-                row["query_text"],
-                row["query_norm"],
-                row["coverage"],
-                seen,
-                seen,
-            ),
-        )
-        tid = self._conn.execute(
-            "SELECT id FROM curation_topics WHERE kb_id = ? AND query_norm = ?;",
-            (row["kb_id"], row["query_norm"]),
-        ).fetchone()["id"]
-        if tid == new_id and row.get("embedding"):  # freshly inserted → index it
+        try:
             self._conn.execute(
-                "INSERT INTO vec_curation_topics (topic_id, embedding) VALUES (?, ?);",
-                (tid, serialize_float32(row["embedding"])),
+                """
+                INSERT INTO curation_topics (id, org_id, kb_id, query_text, query_norm,
+                                             coverage, first_seen, last_seen)
+                VALUES (?,?,?,?,?,?,?,?)
+                ON CONFLICT(kb_id, query_norm) DO UPDATE SET
+                  recurrence = recurrence + 1, last_seen = excluded.last_seen,
+                  coverage = excluded.coverage, consumed_at = NULL, resolved_at = NULL;
+                """,
+                (
+                    new_id,
+                    _ORG,
+                    row["kb_id"],
+                    row["query_text"],
+                    row["query_norm"],
+                    row["coverage"],
+                    seen,
+                    seen,
+                ),
             )
-        self._conn.commit()
+            tid = self._conn.execute(
+                "SELECT id FROM curation_topics WHERE kb_id = ? AND query_norm = ?;",
+                (row["kb_id"], row["query_norm"]),
+            ).fetchone()["id"]
+            if tid == new_id and row.get("embedding"):  # freshly inserted → index it
+                self._conn.execute(
+                    "INSERT INTO vec_curation_topics (topic_id, embedding) VALUES (?, ?);",
+                    (tid, serialize_float32(row["embedding"])),
+                )
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
         return tid
 
     async def bump_curation_topic(

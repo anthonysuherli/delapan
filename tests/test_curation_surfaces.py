@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -83,6 +83,34 @@ async def test_backlog_returns_ranked_topics(patched):
     patched.topics = [_topic("low", recurrence=1), _topic("high", text="q2", recurrence=9)]
     out = await srv.delapan_backlog(project="p", kb="kb")
     assert [t["id"] for t in out["topics"]] == ["high", "low"]
+
+
+@pytest.mark.asyncio
+async def test_backlog_ranks_over_full_pool_not_just_recent_slice(monkeypatch):
+    """A high-recurrence topic that hasn't been asked about *recently* must still
+    surface even when 20+ more-recent, lower-recurrence topics exist for the same
+    KB. Regression for the bug where the candidate pool was capped by recency
+    (`list_curation_topics(limit=backlog_limit)`) BEFORE ranking, so a
+    genuinely top-ranked-but-stale topic could be truncated away before
+    `rank_backlog` ever saw it."""
+    now = datetime.now(timezone.utc)
+    stale_high = _topic("stale-high", text="stale query", recurrence=50)
+    stale_high["last_seen"] = (now - timedelta(days=60)).isoformat()
+    fresh_low = [_topic(f"fresh-{i}", text=f"fresh query {i}", recurrence=1) for i in range(24)]
+
+    class _RecencyCappedStore(_Store):
+        """Mirrors both real store tiers: ORDER BY last_seen DESC, cap at `limit`."""
+
+        async def list_curation_topics(self, _kb, *, include_closed=False, limit=None):
+            ordered = sorted(self.topics, key=lambda t: t["last_seen"], reverse=True)
+            return ordered[: min(limit or 100, 500)]
+
+    store = _RecencyCappedStore(topics=[stale_high, *fresh_low])
+    monkeypatch.setattr(srv, "resolve_tenant", lambda *a, **k: _Ctx())
+    monkeypatch.setattr(srv, "get_store", lambda *a, **k: store)
+
+    out = await srv.delapan_backlog(project="p", kb="kb")
+    assert out["topics"][0]["id"] == "stale-high"
 
 
 @pytest.mark.asyncio
