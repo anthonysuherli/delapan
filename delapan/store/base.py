@@ -298,10 +298,73 @@ class Store(Protocol):
         org_id: str,
         kb_id: str,
         surface: str,
-        targets,
+        targets: list,
         query_text: str | None = None,
+        coverage: str | None = None,
+        band_counts: dict | None = None,
     ) -> None:
-        """Append access events. Best-effort by contract — must never raise."""
+        """Append one access event. Best-effort by contract: **must never raise**.
+
+        `coverage` is the rich/sparse/gap verdict for `query_text`, `band_counts`
+        the per-band hit counts — the curation flywheel's ground truth. `targets`
+        is accepted for Protocol compatibility and is not persisted by the
+        query-level row; per-target fan-out rows can be added later without a
+        schema change."""
+        ...
+
+    # --- curation flywheel ---------------------------------------------------
+    # Backlog of gap/sparse queries, materialized at write time. All CRUD-dumb:
+    # every transition rule lives in `core/curation/recorder.py`, once, not per
+    # tier. All async — the cloud tier's postgrest calls go through to_thread so
+    # a background recording never blocks the event loop.
+
+    async def match_curation_topics(
+        self,
+        kb_id: str,
+        query_embedding: list[float],
+        match_count: int,
+        min_similarity: float,
+    ) -> list[dict]:
+        """Cosine KNN over this KB's topics; rows carry `similarity`.
+
+        Row shape: `id, query_text, query_norm, coverage, recurrence, first_seen,
+        last_seen, consumed_at, resolved_at, similarity`."""
+        ...
+
+    async def upsert_curation_topic(self, row: dict) -> str:
+        """Insert a topic, or increment the existing one on `(kb_id, query_norm)`.
+
+        Atomic: the conflict target is a unique index and the increment happens in
+        SQL, so concurrent recordings of the same query can never double-insert or
+        lose an update. On conflict: `recurrence += 1`, `last_seen`/`coverage`
+        refreshed, `consumed_at`/`resolved_at` cleared. `row` carries `org_id,
+        kb_id, query_text, query_norm, embedding, coverage, seen_at`. Returns the
+        topic id."""
+        ...
+
+    async def bump_curation_topic(
+        self, kb_id: str, topic_id: str, *, coverage: str, seen_at: str
+    ) -> None:
+        """Increment `recurrence` in SQL and refresh `last_seen`/`coverage`,
+        clearing `consumed_at`/`resolved_at` — the vector-hit path's counterpart to
+        `upsert_curation_topic`'s conflict arm."""
+        ...
+
+    async def update_curation_topic(self, kb_id: str, topic_id: str, **patch) -> None:
+        """Patch stamp columns (`consumed_at`, `resolved_at`). Values are written
+        verbatim; `None` clears."""
+        ...
+
+    async def list_curation_topics(
+        self, kb_id: str, *, include_closed: bool = False, limit: int | None = None
+    ) -> list[dict]:
+        """Topics for `kb_id`. Open-only by default (`consumed_at IS NULL AND
+        resolved_at IS NULL`); ranking is the caller's job (`rank_backlog`)."""
+        ...
+
+    async def prune_access_events(self, kb_id: str, older_than_iso: str) -> None:
+        """Delete this KB's access events older than `older_than_iso`.
+        Best-effort: never raises."""
         ...
 
     # --- resolution event log (memory write decisions) -----------------------
