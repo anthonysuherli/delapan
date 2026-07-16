@@ -53,6 +53,36 @@ def test_list_and_count(monkeypatch):
     assert store.count_findings("kb1") == 3
 
 
+def test_list_total_reflects_full_match_count_despite_limit(monkeypatch):
+    store, fake = make_store(monkeypatch)
+    fake.tables["findings"] = [
+        {"id": f"f{i}", "org_id": "org1", "kb_id": "kb1", "title": f"T{i}",
+         "category": "c", "confidence": 0.5, "tags": [], "created_at": f"t{i}"}
+        for i in range(5)
+    ]
+    out = store.list_findings("kb1", limit=2)
+    assert out["count"] == 2
+    assert len(out["findings"]) == 2
+    assert out["total"] == 5
+
+
+def test_list_total_respects_category_filter(monkeypatch):
+    store, fake = make_store(monkeypatch)
+    fake.tables["findings"] = [
+        {"id": f"a{i}", "org_id": "org1", "kb_id": "kb1", "title": f"A{i}",
+         "category": "alpha", "confidence": 0.5, "tags": [], "created_at": f"t{i}"}
+        for i in range(4)
+    ] + [
+        {"id": f"b{i}", "org_id": "org1", "kb_id": "kb1", "title": f"B{i}",
+         "category": "beta", "confidence": 0.5, "tags": [], "created_at": f"u{i}"}
+        for i in range(2)
+    ]
+    out = store.list_findings("kb1", category="alpha", limit=1)
+    assert out["count"] == 1
+    assert len(out["findings"]) == 1
+    assert out["total"] == 4
+
+
 @pytest.mark.asyncio
 async def test_match_findings_calls_rpc_with_match_kb_id(monkeypatch):
     store, fake = make_store(monkeypatch)

@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 _MAX_GROUNDED = 50
 LIST_DEFAULT_LIMIT = 20
-LIST_MAX_LIMIT = 100
+LIST_MAX_LIMIT = 1000
 
 
 def _now_iso() -> str:
@@ -212,16 +212,18 @@ class SupabaseStore:
                       include_invalidated: bool = False) -> dict:
         n = min(limit or LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT)
         q = (self._c.table("findings")
-             .select("id,title,category,confidence,tags,created_at").eq("kb_id", kb_id))
+             .select("id,title,category,confidence,tags,created_at", count="exact")
+             .eq("kb_id", kb_id))
         if category:
             q = q.eq("category", category)
         if not include_invalidated:
             q = q.is_("invalidated_at", "null")
-        rows = q.order("created_at", desc=True).limit(n).execute().data
+        res = q.order("created_at", desc=True).limit(n).execute()
         findings = [{"id": r["id"], "title": r["title"], "category": r["category"],
                      "confidence": r["confidence"], "tags": r.get("tags") or [],
-                     "created_at": r["created_at"]} for r in rows]
-        return {"count": len(findings), "findings": findings}
+                     "created_at": r["created_at"]} for r in res.data]
+        total = int(res.count or 0)
+        return {"count": len(findings), "total": total, "findings": findings}
 
     def count_findings(self, kb_id: str) -> int:
         """Exact LIVE finding count for `kb_id` (invalidated_at IS NULL)."""

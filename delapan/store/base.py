@@ -94,9 +94,12 @@ class Store(Protocol):
         limit: int | None = None,
         include_invalidated: bool = False,
     ) -> dict:
-        """Most-recent findings in `kb_id`. Returns {"count", "findings"}.
+        """Most-recent findings in `kb_id`. Returns {"count", "total", "findings"}.
+
         Live rows only unless `include_invalidated` — retired rows stay
-        reachable for history/audit, never for retrieval."""
+        reachable for history/audit, never for retrieval. ``count`` is rows
+        returned (bounded by `limit`); ``total`` is rows matching `kb_id` +
+        `category` + the live-only filter, regardless of `limit`."""
         ...
 
     def delete_finding(self, kb_id: str, finding_id: str) -> dict:

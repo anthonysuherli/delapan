@@ -87,7 +87,7 @@ def _finding_from_row(r) -> dict:
 _FINDING_MATCH_COLS = ("id", "title", "content", "category", "confidence", "tags", "provenance")
 
 LIST_DEFAULT_LIMIT = 20
-LIST_MAX_LIMIT = 100
+LIST_MAX_LIMIT = 1000
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
@@ -452,23 +452,28 @@ class SQLiteStore:
         limit: int | None = None,
         include_invalidated: bool = False,
     ) -> dict:
-        """Most-recent findings in `kb_id`. Returns {"count", "findings"}.
+        """Most-recent findings in `kb_id`. Returns {"count", "total", "findings"}.
 
         List view omits ``content``/``provenance`` (matching SupabaseStore);
         optional category filter; default/max limits mirror findings/service.
         Live rows only unless `include_invalidated` — retired rows stay
-        reachable for history/audit, never for retrieval."""
+        reachable for history/audit, never for retrieval. ``count`` is rows
+        returned, ``total`` is rows matching regardless of ``limit`` — the
+        client needs both to tell truncation from completeness."""
         n = min(limit or LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT)
-        sql = f"SELECT {', '.join(_FINDING_LIST_COLS)} FROM findings WHERE kb_id = ?"
+        where = "WHERE kb_id = ?"
         params: list[object] = [kb_id]
         if category:
-            sql += " AND category = ?"
+            where += " AND category = ?"
             params.append(category)
         if not include_invalidated:
-            sql += " AND invalidated_at IS NULL"
-        sql += " ORDER BY created_at DESC LIMIT ?;"
-        params.append(n)
-        rows = self._conn.execute(sql, params).fetchall()
+            where += " AND invalidated_at IS NULL"
+
+        sql = (
+            f"SELECT {', '.join(_FINDING_LIST_COLS)} FROM findings {where} "
+            "ORDER BY created_at DESC LIMIT ?;"
+        )
+        rows = self._conn.execute(sql, (*params, n)).fetchall()
         findings = [
             {
                 "id": r["id"],
@@ -480,7 +485,13 @@ class SQLiteStore:
             }
             for r in rows
         ]
-        return {"count": len(findings), "findings": findings}
+
+        total = int(
+            self._conn.execute(
+                f"SELECT COUNT(*) AS n FROM findings {where};", tuple(params)
+            ).fetchone()["n"]
+        )
+        return {"count": len(findings), "total": total, "findings": findings}
 
     def count_findings(self, kb_id: str) -> int:
         """Exact LIVE finding count for `kb_id` (uncapped, unlike list_findings).
