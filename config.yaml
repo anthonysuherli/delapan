@@ -151,10 +151,10 @@ knowledge_graph:
   max_edges: 1200                   # safety cap on edges upserted per build
   reasoning_effort: null            # Opus 4.8 rejects the gateway's reasoning_effort param (maps to thinking.type.enabled); it thinks adaptively by default. Gemini fallback runs at provider default.
 
-# Memory resolution — decide ADD/UPDATE/NOOP/DELETE per new finding against the
+# Memory resolution — decide ADD/UPDATE/NOOP/SUPERSEDE per new finding against the
 # top-k existing findings before persisting. enabled=false → pure ADD (append).
 memory:
-  enabled: true  # local tier; cloud stays pure-ADD behind the persist guard until parity
+  enabled: true  # both tiers — cloud reached write-primitive parity in plan Task 10
   resolution_model: anthropic/claude-sonnet-4.6   # cheaper than the KG's Opus; runs every explore
   resolution_fallback_model: openai/gpt-5.4-mini
   temperature: 0.0

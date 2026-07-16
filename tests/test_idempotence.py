@@ -31,7 +31,6 @@ async def _cfg_with_memory(monkeypatch):
         return [[0.01] * 1536 for _ in texts]
 
     monkeypatch.setattr(persist_mod, "embed_batch", _fake_embed)
-    monkeypatch.setattr(persist_mod, "active_backend", lambda: "local")
     get_config.cache_clear()
     cfg = get_config()
     cfg.memory.enabled = True

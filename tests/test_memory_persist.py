@@ -109,7 +109,6 @@ async def _cfg_with_memory(monkeypatch):
         return [[0.01] * 1536 for _ in texts]
 
     monkeypatch.setattr(persist_mod, "embed_batch", _fake_embed)
-    monkeypatch.setattr(persist_mod, "active_backend", lambda: "local")
     get_config.cache_clear()
     cfg = get_config()
     cfg.memory.enabled = True
@@ -318,17 +317,3 @@ async def test_failing_supersede_finding_falls_back_to_add(store, monkeypatch):
     assert "failed" in out.events[0].reason
 
 
-@pytest.mark.asyncio
-async def test_cloud_tier_forces_pure_add(store, monkeypatch):
-    org, pid = store.resolve_project("guard", create=True)
-    kb = store.resolve_kb(org, pid, "main", create=True)
-    ctx = SimpleNamespace(org_id=org, kb_id=kb, project_id=pid)
-    cfg = await _cfg_with_memory(monkeypatch)
-    monkeypatch.setattr(persist_mod, "active_backend", lambda: "cloud")
-
-    def _boom(*a, **k):
-        raise AssertionError("resolver must not run on the cloud tier yet")
-
-    monkeypatch.setattr(persist_mod, "resolve", _boom)
-    await persist_mod.resolve_and_persist(ctx, store, [_finding(pid, "T", {"k": "v"})], cfg)
-    assert store.count_findings(kb) == 1     # plain ADD, resolver never called

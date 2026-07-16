@@ -337,6 +337,6 @@ class Store(Protocol):
 
     def list_resolution_events(self, kb_id: str, limit: int | None = None) -> list[dict]:
         """Most-recent resolution events in ``kb_id`` (newest first). Rows carry
-        ``id, op, candidate_title, target_finding_id, reason, created_at``.
-        ``limit`` defaults to 50; hard-capped at 500."""
+        ``id, op, candidate_title, target_finding_id, new_finding_id, details,
+        reason, created_at``. ``limit`` defaults to 50; hard-capped at 500."""
         ...

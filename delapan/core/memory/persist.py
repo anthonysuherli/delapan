@@ -5,8 +5,9 @@
 
 Replaces the duplicated persist block in the explore call sites. With
 ``memory.enabled is False`` (or no candidates) it is pure ADD — byte-for-byte
-today's append behavior. The cloud tier is also forced to pure ADD until
-``SupabaseStore`` gets the resolution write primitives (plan Task 10).
+today's append behavior. The cloud tier reached write-primitive parity in plan
+Task 10 (2026-07-16 migration applied to the live project) — resolution now
+runs identically on both tiers, gated only by ``memory.enabled``.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from delapan.core.exploration.models import Finding
 from delapan.core.exploration.render import normalize_provenance, render_content
 from delapan.core.memory.models import ResolutionEvent, ResolutionOp, ResolutionOutcome
 from delapan.core.memory.resolver import resolve
-from delapan.store import Store, active_backend
+from delapan.store import Store
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +76,8 @@ async def resolve_and_persist(
     contents = [render_content(f.content) for f in candidates]
     embeddings = await embed_batch(contents)
 
-    # Kill-switch / cloud guard: pure ADD, no resolution, no events.
-    # The cloud tier stays on pure ADD until SupabaseStore reaches parity with the
-    # resolution write primitives (plan Task 10) — guard removed there.
-    if not cfg.memory.enabled or active_backend() == "cloud":
+    # Kill-switch: pure ADD, no resolution, no events.
+    if not cfg.memory.enabled:
         rows = [_row_from_candidate(ctx, f, emb) for f, emb in zip(candidates, embeddings)]
         ids = await store.insert_findings(rows)
         return ResolutionOutcome(affected_finding_ids=ids)

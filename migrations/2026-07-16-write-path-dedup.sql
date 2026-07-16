@@ -2,12 +2,9 @@
 -- Apply to the cloud project BEFORE removing the pure-ADD guard in persist.py.
 -- Spec: docs/superpowers/specs/2026-07-16-write-path-dedup-design.md (§C6, §Migration)
 --
--- NOT YET APPLIED. This file was authored offline against the spec + the local
--- SQLiteStore's working implementation of the same bi-temporal shape
--- (delapan/store/sqlite.py migrations 0009/0010) — it has not been run against
--- the live Supabase project. Two sections below (marked TODO) need a live dump
--- before this file is complete; apply everything only after those are filled in
--- and a human has reviewed the whole file.
+-- Both apply-time TODOs (RLS policies for resolution_events; the amended
+-- match_findings RPC) were filled in 2026-07-16 from live dumps against project
+-- gunqbyddzuwzpncfigro, immediately before applying this migration to that project.
 
 -- valid_from: add WITHOUT a default first — Postgres backfills a column default
 -- into every existing row at ALTER time, which would clobber the created_at seed.
@@ -63,37 +60,41 @@ begin
   return v_new_id;
 end $$;
 
--- =====================================================================================
--- TODO 1 (apply-time, needs a live dump) — RLS policies for resolution_events.
---
--- resolution_events has RLS enabled above but no policies yet, which means it is
--- unreadable/unwritable until policies exist. Before applying this migration, run
--- against the live project:
---
---   select policyname, permissive, roles, cmd, qual, with_check
---   from pg_policies where tablename = 'findings';
---
--- then copy each of findings' org-scoped select/insert policies here, renamed for
--- resolution_events (same org_id-scoping predicate — resolution_events carries its
--- own org_id column). Example shape (fill in the real predicate from the dump):
---
---   create policy "resolution_events_select_own_org" on resolution_events
---     for select using (org_id = <same predicate findings uses>);
---   create policy "resolution_events_insert_own_org" on resolution_events
---     for insert with check (org_id = <same predicate findings uses>);
---
--- =====================================================================================
+-- RLS policies for resolution_events, mirroring findings' live org-scoped policies
+-- (dumped 2026-07-16 from `select policyname, cmd, roles, qual, with_check from
+-- pg_policies where tablename = 'findings'`: all four are `roles={public}`,
+-- predicate `org_id in (select org_members.org_id from org_members where
+-- org_members.user_id = auth.uid())`). resolution_events is audit-only — select
+-- and insert are the operations the app performs; no update/delete policy is
+-- added since nothing in the codebase updates or deletes an audit row.
+create policy "resolution_events_select_own_org" on resolution_events
+  for select using (
+    org_id in (select org_members.org_id from org_members where org_members.user_id = auth.uid())
+  );
+create policy "resolution_events_insert_own_org" on resolution_events
+  for insert with check (
+    org_id in (select org_members.org_id from org_members where org_members.user_id = auth.uid())
+  );
 
--- =====================================================================================
--- TODO 2 (apply-time, needs a live dump) — match_findings RPC gains the live-only filter.
---
--- match_findings must stop returning superseded/retired rows. Before applying, run
--- against the live project:
---
---   select pg_get_functiondef(oid) from pg_proc where proname = 'match_findings';
---
--- take the returned body, add `and f.invalidated_at is null` to its WHERE clause
--- (SupabaseStore.match_findings itself needs no client-side change — the exclusion
--- is entirely server-side in this RPC), and paste the resulting full
--- `create or replace function match_findings(...) ...` statement here.
--- =====================================================================================
+-- match_findings RPC, amended with the live-only filter. Body dumped 2026-07-16 via
+-- `select pg_get_functiondef(oid) from pg_proc where proname = 'match_findings'`;
+-- the only change from the live version is the added `and f.invalidated_at is null`
+-- line. SupabaseStore.match_findings needs no client-side change — the exclusion is
+-- entirely server-side here.
+create or replace function public.match_findings(query_embedding vector, match_kb_id uuid, match_count integer default 10, min_similarity real default 0.0)
+ returns table(id uuid, title text, content text, category text, confidence real, tags text[], provenance jsonb, similarity real)
+ language sql
+ stable
+as $function$
+  select
+    f.id, f.title, f.content, f.category, f.confidence, f.tags, f.provenance,
+    1 - (f.embedding <=> query_embedding) as similarity
+  from findings f
+  where f.kb_id = match_kb_id
+    and f.embedding is not null
+    and f.status <> 'discarded'
+    and f.invalidated_at is null
+    and 1 - (f.embedding <=> query_embedding) >= min_similarity
+  order by f.embedding <=> query_embedding
+  limit match_count;
+$function$;
