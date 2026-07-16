@@ -163,8 +163,9 @@ async def delapan_explore(
     cfg = get_config().exploration
     cap = min(max_findings or cfg.default_max_findings, cfg.max_findings)
 
-    exp_id = store.create_exploration(ctx.org_id, ctx.kb_id, prompt)
+    exp_id: str | None = None
     try:
+        exp_id = store.create_exploration(ctx.org_id, ctx.kb_id, prompt)
         findings = await run_exploration(
             prompt,
             exploration_id=exp_id,
@@ -185,12 +186,18 @@ async def delapan_explore(
         # scheduler, gated on an approved intent schema — no-op otherwise).
         await maybe_rebuild_synopsis(ctx.kb_id, org_id=ctx.org_id, store=store)
         schedule_kg_update(ctx, ids, store=store)
-    except Exception as exc:  # noqa: BLE001 — mark the row failed, then re-raise
-        store.update_exploration(exp_id, status="failed", completed_at=_now_iso(), error=str(exc))
+    except Exception as exc:  # noqa: BLE001 — restore the topic, then re-raise the original
         if topic_id:  # a failed run must return the topic to the backlog
             try:
                 await store.update_curation_topic(ctx.kb_id, topic_id, consumed_at=None)
             except Exception:  # noqa: BLE001 — best-effort; the raise below is the signal
+                pass
+        if exp_id is not None:  # no row to mark failed if create_exploration itself failed
+            try:
+                store.update_exploration(
+                    exp_id, status="failed", completed_at=_now_iso(), error=str(exc)
+                )
+            except Exception:  # noqa: BLE001 — bookkeeping must never mask the original exc
                 pass
         raise
 

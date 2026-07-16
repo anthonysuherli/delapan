@@ -125,6 +125,40 @@ async def test_failed_promptless_explore_returns_topic_to_backlog(patched, monke
     assert any(u[0] == "t1" and u[1].get("consumed_at") is None for u in patched.updates)
 
 
+@pytest.mark.asyncio
+async def test_failed_create_exploration_returns_topic_to_backlog(patched, monkeypatch):
+    # Gap A: create_exploration itself raises, before any exploration row exists.
+    patched.topics = [_topic("t1")]
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("create_exploration down")
+
+    monkeypatch.setattr(patched, "create_exploration", _boom)
+    with pytest.raises(RuntimeError, match="create_exploration down"):
+        await srv.delapan_explore(project="p", kb="kb")
+    assert any(u[0] == "t1" and u[1].get("consumed_at") is None for u in patched.updates)
+
+
+@pytest.mark.asyncio
+async def test_failed_bookkeeping_does_not_mask_original_exception(patched, monkeypatch):
+    # Gap B: update_exploration (the "mark failed" bookkeeping call) itself raises
+    # while recovering from a pipeline failure. The original pipeline exception must
+    # still propagate, and the topic must still be restored to the backlog.
+    patched.topics = [_topic("t1")]
+
+    async def _boom(*_a, **_k):
+        raise RuntimeError("pipeline down")
+
+    def _bookkeeping_boom(*_a, **_k):
+        raise ValueError("update_exploration down")
+
+    monkeypatch.setattr(srv, "run_exploration", _boom)
+    monkeypatch.setattr(patched, "update_exploration", _bookkeeping_boom)
+    with pytest.raises(RuntimeError, match="pipeline down"):
+        await srv.delapan_explore(project="p", kb="kb")
+    assert any(u[0] == "t1" and u[1].get("consumed_at") is None for u in patched.updates)
+
+
 class _Outcome:
     affected_finding_ids: list[str] = []
 
