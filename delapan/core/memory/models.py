@@ -17,7 +17,7 @@ class ResolutionOp(str, Enum):
     ADD = "ADD"
     UPDATE = "UPDATE"
     NOOP = "NOOP"
-    DELETE = "DELETE"
+    SUPERSEDE = "SUPERSEDE"
 
 
 class ResolutionDecision(BaseModel):
@@ -27,7 +27,7 @@ class ResolutionDecision(BaseModel):
     op: ResolutionOp
     target_finding_id: str | None = Field(
         default=None,
-        description="Existing finding id to UPDATE/NOOP/DELETE; null for ADD",
+        description="Existing finding id to UPDATE/NOOP/SUPERSEDE; null for ADD",
     )
     reason: str = Field(default="", description="Short justification for the op")
 

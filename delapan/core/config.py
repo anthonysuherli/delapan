@@ -374,7 +374,7 @@ class ConceptsConfig(BaseModel):
 
 
 class MemoryConfig(BaseModel):
-    """mem0-style finding resolution: decide ADD/UPDATE/NOOP/DELETE per candidate
+    """mem0-style finding resolution: decide ADD/UPDATE/NOOP/SUPERSEDE per candidate
     against the top-k existing findings before persisting. Disabled → pure ADD
     (today's append behavior). Models are AI Gateway slugs (dots for versions)."""
 

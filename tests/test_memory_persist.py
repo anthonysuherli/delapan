@@ -14,6 +14,10 @@ def _finding(pid, title, content):
     return Finding(exploration_id="e", project_id=pid, category="fact", title=title, content=content)
 
 
+async def _decisions(ds):
+    return ds
+
+
 @pytest.mark.asyncio
 async def test_add_then_update_no_duplicate(store, monkeypatch):
     org, pid = store.resolve_project("perA", create=True)
@@ -50,9 +54,11 @@ async def test_add_then_update_no_duplicate(store, monkeypatch):
     monkeypatch.setattr(persist_mod, "resolve", _update)
     f2 = _finding(pid, "Tavily pricing (updated)", {"k": "free + paid tiers"})
     out2 = await persist_mod.resolve_and_persist(ctx, store, [f2], cfg)
-    assert out2.affected_finding_ids == [fid]   # same id (stable)
-    assert store.count_findings(kb) == 1        # NO duplicate row
-    assert store.get_finding(kb, fid)["title"] == "Tavily pricing (updated)"
+    new_fid = out2.affected_finding_ids[0]
+    assert new_fid != fid                       # UPDATE now versions the row
+    assert store.count_findings(kb) == 1        # NO duplicate LIVE row
+    assert store.get_finding(kb, fid)["superseded_by"] == new_fid
+    assert store.get_finding(kb, new_fid)["title"] == "Tavily pricing (updated)"
     evs = store.list_resolution_events(kb)
     assert any(e["op"] == "UPDATE" for e in evs)
     get_config.cache_clear()
@@ -94,3 +100,168 @@ async def test_empty_candidates_returns_empty(store):
     out = await persist_mod.resolve_and_persist(ctx, store, [], get_config())
     assert out.affected_finding_ids == []
     assert store.count_findings(kb) == 0
+
+
+async def _cfg_with_memory(monkeypatch):
+    from delapan.core.config import get_config
+
+    async def _fake_embed(texts):
+        return [[0.01] * 1536 for _ in texts]
+
+    monkeypatch.setattr(persist_mod, "embed_batch", _fake_embed)
+    monkeypatch.setattr(persist_mod, "active_backend", lambda: "local")
+    get_config.cache_clear()
+    cfg = get_config()
+    cfg.memory.enabled = True
+    return cfg
+
+
+@pytest.mark.asyncio
+async def test_noop_corroborates_target_and_raises_confidence(store, monkeypatch):
+    org, pid = store.resolve_project("noopA", create=True)
+    kb = store.resolve_kb(org, pid, "main", create=True)
+    ctx = SimpleNamespace(org_id=org, kb_id=kb, project_id=pid)
+    cfg = await _cfg_with_memory(monkeypatch)
+
+    monkeypatch.setattr(
+        persist_mod, "resolve",
+        lambda *a, **k: _decisions([ResolutionDecision(candidate_index=0, op=ResolutionOp.ADD)]),
+    )
+    f1 = _finding(pid, "Tavily pricing", {"k": "free 1000/mo"})
+    f1.provenance = [{"url": "http://a"}]
+    fid = (await persist_mod.resolve_and_persist(ctx, store, [f1], cfg)).affected_finding_ids[0]
+    before_row = store.get_finding(kb, fid)
+    before, before_content = before_row["confidence"], before_row["content"]
+
+    # A duplicate citing a NEW url → corroboration: same row, more sources.
+    monkeypatch.setattr(
+        persist_mod, "resolve",
+        lambda *a, **k: _decisions([
+            ResolutionDecision(candidate_index=0, op=ResolutionOp.NOOP,
+                               target_finding_id=fid, reason="same fact")
+        ]),
+    )
+    f2 = _finding(pid, "Tavily pricing", {"k": "free 1000/mo"})
+    f2.provenance = [{"url": "http://b"}]
+    out = await persist_mod.resolve_and_persist(ctx, store, [f2], cfg)
+
+    assert out.affected_finding_ids == []          # NOOP touches no new row
+    assert store.count_findings(kb) == 1           # no duplicate
+    row = store.get_finding(kb, fid)
+    assert {p["url"] for p in row["provenance"]} == {"http://a", "http://b"}
+    assert row["confidence"] > before               # monotonic raise
+    assert row["content"] == before_content         # body untouched — NOOP never rewrites content
+
+
+@pytest.mark.asyncio
+async def test_noop_with_no_new_url_is_a_true_no_write(store, monkeypatch):
+    org, pid = store.resolve_project("noopB", create=True)
+    kb = store.resolve_kb(org, pid, "main", create=True)
+    ctx = SimpleNamespace(org_id=org, kb_id=kb, project_id=pid)
+    cfg = await _cfg_with_memory(monkeypatch)
+
+    monkeypatch.setattr(
+        persist_mod, "resolve",
+        lambda *a, **k: _decisions([ResolutionDecision(candidate_index=0, op=ResolutionOp.ADD)]),
+    )
+    f1 = _finding(pid, "T", {"k": "v"})
+    f1.provenance = [{"url": "http://a"}]
+    fid = (await persist_mod.resolve_and_persist(ctx, store, [f1], cfg)).affected_finding_ids[0]
+    snapshot = store.get_finding(kb, fid)
+
+    monkeypatch.setattr(
+        persist_mod, "resolve",
+        lambda *a, **k: _decisions([
+            ResolutionDecision(candidate_index=0, op=ResolutionOp.NOOP, target_finding_id=fid)
+        ]),
+    )
+    f2 = _finding(pid, "T", {"k": "v"})
+    f2.provenance = [{"url": "http://a"}]          # same url — nothing to corroborate
+    await persist_mod.resolve_and_persist(ctx, store, [f2], cfg)
+
+    assert store.get_finding(kb, fid) == snapshot  # byte-identical row
+    assert store.list_resolution_events(kb)[0]["op"] == "NOOP"  # but still audited
+
+
+@pytest.mark.asyncio
+async def test_supersede_retires_contradicted_row_without_deleting(store, monkeypatch):
+    org, pid = store.resolve_project("supA", create=True)
+    kb = store.resolve_kb(org, pid, "main", create=True)
+    ctx = SimpleNamespace(org_id=org, kb_id=kb, project_id=pid)
+    cfg = await _cfg_with_memory(monkeypatch)
+
+    monkeypatch.setattr(
+        persist_mod, "resolve",
+        lambda *a, **k: _decisions([ResolutionDecision(candidate_index=0, op=ResolutionOp.ADD)]),
+    )
+    old = _finding(pid, "Tavily is free", {"k": "free forever"})
+    old.provenance = [{"url": "http://old"}]
+    old_id = (await persist_mod.resolve_and_persist(ctx, store, [old], cfg)).affected_finding_ids[0]
+
+    monkeypatch.setattr(
+        persist_mod, "resolve",
+        lambda *a, **k: _decisions([
+            ResolutionDecision(candidate_index=0, op=ResolutionOp.SUPERSEDE,
+                               target_finding_id=old_id, reason="contradicts")
+        ]),
+    )
+    new = _finding(pid, "Tavily is paid", {"k": "$30/mo"})
+    new.provenance = [{"url": "http://new"}]
+    out = await persist_mod.resolve_and_persist(ctx, store, [new], cfg)
+
+    new_id = out.affected_finding_ids[0]
+    assert new_id != old_id
+    assert store.count_findings(kb) == 1                     # old retired, new live
+    retired = store.get_finding(kb, old_id)                  # NOT deleted
+    assert retired["superseded_by"] == new_id
+    # A contradicted finding's sources must not corroborate its contradiction.
+    assert {p["url"] for p in store.get_finding(kb, new_id)["provenance"]} == {"http://new"}
+    assert store.list_resolution_events(kb)[0]["op"] == "SUPERSEDE"
+
+
+@pytest.mark.asyncio
+async def test_update_versions_the_row_and_merges_provenance(store, monkeypatch):
+    org, pid = store.resolve_project("updA", create=True)
+    kb = store.resolve_kb(org, pid, "main", create=True)
+    ctx = SimpleNamespace(org_id=org, kb_id=kb, project_id=pid)
+    cfg = await _cfg_with_memory(monkeypatch)
+
+    monkeypatch.setattr(
+        persist_mod, "resolve",
+        lambda *a, **k: _decisions([ResolutionDecision(candidate_index=0, op=ResolutionOp.ADD)]),
+    )
+    f1 = _finding(pid, "Pricing", {"k": "old detail"})
+    f1.provenance = [{"url": "http://a"}]
+    old_id = (await persist_mod.resolve_and_persist(ctx, store, [f1], cfg)).affected_finding_ids[0]
+
+    monkeypatch.setattr(
+        persist_mod, "resolve",
+        lambda *a, **k: _decisions([
+            ResolutionDecision(candidate_index=0, op=ResolutionOp.UPDATE, target_finding_id=old_id)
+        ]),
+    )
+    f2 = _finding(pid, "Pricing", {"k": "refined detail"})
+    f2.provenance = [{"url": "http://b"}]
+    new_id = (await persist_mod.resolve_and_persist(ctx, store, [f2], cfg)).affected_finding_ids[0]
+
+    assert store.count_findings(kb) == 1
+    assert store.get_finding(kb, old_id)["superseded_by"] == new_id
+    new_row = store.get_finding(kb, new_id)
+    assert {p["url"] for p in new_row["provenance"]} == {"http://a", "http://b"}  # union
+    assert new_row["confidence"] > 0.4                                # two sources
+
+
+@pytest.mark.asyncio
+async def test_cloud_tier_forces_pure_add(store, monkeypatch):
+    org, pid = store.resolve_project("guard", create=True)
+    kb = store.resolve_kb(org, pid, "main", create=True)
+    ctx = SimpleNamespace(org_id=org, kb_id=kb, project_id=pid)
+    cfg = await _cfg_with_memory(monkeypatch)
+    monkeypatch.setattr(persist_mod, "active_backend", lambda: "cloud")
+
+    def _boom(*a, **k):
+        raise AssertionError("resolver must not run on the cloud tier yet")
+
+    monkeypatch.setattr(persist_mod, "resolve", _boom)
+    await persist_mod.resolve_and_persist(ctx, store, [_finding(pid, "T", {"k": "v"})], cfg)
+    assert store.count_findings(kb) == 1     # plain ADD, resolver never called

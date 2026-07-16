@@ -27,15 +27,15 @@ logger = logging.getLogger(__name__)
 
 _SYSTEM = (
     "You maintain a knowledge base of findings. For each new CANDIDATE finding you "
-    "are shown its most semantically-similar EXISTING findings (id, title, similarity). "
+    "are shown its most semantically-similar EXISTING findings (id, title, similarity, body). "
     "Decide ONE operation per candidate:\n"
     "- ADD: genuinely new information (no existing finding covers it).\n"
-    "- UPDATE: refines/supersedes one existing finding (set target_finding_id to its id).\n"
+    "- UPDATE: refines/extends one existing finding (set target_finding_id to its id).\n"
     "- NOOP: duplicates one existing finding, no new info (set target_finding_id to its id).\n"
-    "- DELETE: directly contradicts and invalidates one existing finding "
-    "(set target_finding_id to its id). Use sparingly.\n"
+    "- SUPERSEDE: directly contradicts and invalidates one existing finding — the world "
+    "changed or the old finding was wrong (set target_finding_id to its id). Use sparingly.\n"
     "Return one decision per candidate using the candidate_index you were given. "
-    "When unsure, prefer ADD. Only UPDATE/NOOP/DELETE when a neighbor is clearly the same topic."
+    "When unsure, prefer ADD. Only UPDATE/NOOP/SUPERSEDE when a neighbor is clearly the same topic."
 )
 
 
@@ -120,7 +120,7 @@ async def resolve(
             if i not in valid or i in seen:
                 continue  # ignore out-of-chunk indices and duplicate decisions
             seen.add(i)
-            if d.op in (ResolutionOp.UPDATE, ResolutionOp.NOOP, ResolutionOp.DELETE):
+            if d.op in (ResolutionOp.UPDATE, ResolutionOp.NOOP, ResolutionOp.SUPERSEDE):
                 neighbor_ids = {n.get("id") for n in neighbor_sets[i]}
                 if d.target_finding_id is None or d.target_finding_id not in neighbor_ids:
                     # Hallucinated, empty, or out-of-scope target — demote to a safe ADD.

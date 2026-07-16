@@ -91,7 +91,7 @@ async def test_none_target_demoted_to_add(monkeypatch):
     async def _fake(**kwargs):
         return ResolutionBatch(
             decisions=[
-                ResolutionDecision(candidate_index=0, op=ResolutionOp.DELETE, target_finding_id=None, reason="x")
+                ResolutionDecision(candidate_index=0, op=ResolutionOp.SUPERSEDE, target_finding_id=None, reason="x")
             ]
         )
 

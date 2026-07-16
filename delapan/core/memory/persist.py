@@ -1,11 +1,12 @@
 """resolve_and_persist — the single finding-persist path.
 
-    candidates ─► render+embed ─► resolve ─► apply (insert/update/delete) ─► log
+    candidates ─► render+embed ─► resolve ─► apply (ADD/UPDATE/NOOP/SUPERSEDE) ─► log
                                                          └─► ResolutionOutcome
 
 Replaces the duplicated persist block in the explore call sites. With
 ``memory.enabled is False`` (or no candidates) it is pure ADD — byte-for-byte
-today's append behavior.
+today's append behavior. The cloud tier is also forced to pure ADD until
+``SupabaseStore`` gets the resolution write primitives (plan Task 10).
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from delapan.core.exploration.models import Finding
 from delapan.core.exploration.render import normalize_provenance, render_content
 from delapan.core.memory.models import ResolutionEvent, ResolutionOp, ResolutionOutcome
 from delapan.core.memory.resolver import resolve
-from delapan.store import Store
+from delapan.store import Store, active_backend
 
 logger = logging.getLogger(__name__)
 
@@ -55,21 +56,29 @@ def _merge_provenance(existing: list[dict], new: list[dict]) -> list[dict]:
     return out
 
 
+def _distinct_urls(provenance: list[dict]) -> int:
+    """Distinct source urls — url-less entries are kept but don't count as sources."""
+    return len({p.get("url") for p in provenance if isinstance(p, dict) and p.get("url")})
+
+
 async def resolve_and_persist(
     ctx: TenantContext, store: Store, candidates: list[Finding], cfg: AppConfig
 ) -> ResolutionOutcome:
     """Resolve each candidate against existing findings, then apply + log.
 
-    Returns the affected finding ids (added ∪ updated) for the synopsis/KG
-    schedulers. NOOP/DELETE contribute no affected ids."""
+    Returns the affected finding ids (added ∪ new UPDATE/SUPERSEDE rows) for the
+    synopsis/KG schedulers. NOOP contributes no affected id (the target is
+    unretired and, absent a new url, untouched)."""
     if not candidates:
         return ResolutionOutcome()
 
     contents = [render_content(f.content) for f in candidates]
     embeddings = await embed_batch(contents)
 
-    # Kill-switch / fast path: pure ADD, no resolution, no events.
-    if not cfg.memory.enabled:
+    # Kill-switch / cloud guard: pure ADD, no resolution, no events.
+    # The cloud tier stays on pure ADD until SupabaseStore reaches parity with the
+    # resolution write primitives (plan Task 10) — guard removed there.
+    if not cfg.memory.enabled or active_backend() == "cloud":
         rows = [_row_from_candidate(ctx, f, emb) for f, emb in zip(candidates, embeddings)]
         ids = await store.insert_findings(rows)
         return ResolutionOutcome(affected_finding_ids=ids)
@@ -84,63 +93,96 @@ async def resolve_and_persist(
             add_rows.append(_row_from_candidate(ctx, f, emb))
             events.append(ResolutionEvent(op="ADD", candidate_title=f.title, reason=d.reason))
         elif d.op == ResolutionOp.NOOP:
+            # Corroborate: the candidate's sources reinforce the existing finding.
+            # No new url → nothing to corroborate → a true no-write (idempotent
+            # re-runs leave the row byte-identical); the event is still logged.
+            try:
+                target = store.get_finding(ctx.kb_id, d.target_finding_id)
+            except Exception:  # noqa: BLE001 — target vanished; skip and log
+                events.append(
+                    ResolutionEvent(
+                        op="NOOP", candidate_title=f.title,
+                        target_finding_id=d.target_finding_id,
+                        reason="noop target missing; skipped",
+                    )
+                )
+                continue
+            existing_prov = target.get("provenance") or []
+            merged_prov = _merge_provenance(existing_prov, normalize_provenance(f.provenance))
+            before_n, after_n = _distinct_urls(existing_prov), _distinct_urls(merged_prov)
+            before_conf = target.get("confidence") or 0.0
+            after_conf = before_conf
+            if after_n > before_n:
+                # Monotonic: corroboration never lowers a confidence the extractor
+                # or quality-blend set higher than the bare source curve.
+                after_conf = max(before_conf, confidence_from_sources(after_n or 1))
+                await store.update_finding(
+                    ctx.kb_id,
+                    d.target_finding_id,
+                    confidence=after_conf,
+                    provenance=merged_prov,
+                )
             events.append(
                 ResolutionEvent(
                     op="NOOP",
                     candidate_title=f.title,
                     target_finding_id=d.target_finding_id,
+                    details={
+                        "merged_urls": sorted(
+                            {p.get("url") for p in merged_prov if p.get("url")}
+                        ),
+                        "confidence_before": before_conf,
+                        "confidence_after": after_conf,
+                    },
                     reason=d.reason,
                 )
             )
-        elif d.op == ResolutionOp.DELETE:
-            try:
-                store.delete_finding(ctx.kb_id, d.target_finding_id)
-            except Exception:  # noqa: BLE001 — a stale target is not fatal
-                logger.debug("resolution DELETE: target %s absent", d.target_finding_id)
-            events.append(
-                ResolutionEvent(
-                    op="DELETE",
-                    candidate_title=f.title,
-                    target_finding_id=d.target_finding_id,
-                    reason=d.reason,
-                )
-            )
-        elif d.op == ResolutionOp.UPDATE:
+        elif d.op in (ResolutionOp.UPDATE, ResolutionOp.SUPERSEDE):
             try:
                 target = store.get_finding(ctx.kb_id, d.target_finding_id)
             except Exception:  # noqa: BLE001 — target vanished → ADD instead
                 add_rows.append(_row_from_candidate(ctx, f, emb))
                 events.append(
                     ResolutionEvent(
-                        op="ADD", candidate_title=f.title, reason="update target missing; added"
+                        op="ADD", candidate_title=f.title,
+                        reason=f"{d.op.value.lower()} target missing; added",
                     )
                 )
                 continue
-            merged_prov = _merge_provenance(
-                target.get("provenance") or [], normalize_provenance(f.provenance)
-            )
-            source_count = len({p.get("url") for p in merged_prov if p.get("url")}) or 1
-            await store.update_finding(
-                ctx.kb_id,
-                d.target_finding_id,
-                content=render_content(f.content),
-                confidence=confidence_from_sources(source_count),
-                provenance=merged_prov,
-                embedding=emb,
-                title=f.title,
-            )
-            affected.append(d.target_finding_id)
+            row = _row_from_candidate(ctx, f, emb)
+            if d.op == ResolutionOp.UPDATE:
+                # Refinement inherits the target's sources — same claim, more support.
+                row["provenance"] = _merge_provenance(
+                    target.get("provenance") or [], normalize_provenance(f.provenance)
+                )
+            # SUPERSEDE keeps only its own provenance: a contradicted finding's
+            # sources must not corroborate the claim that contradicts them.
+            row["confidence"] = confidence_from_sources(_distinct_urls(row["provenance"]) or 1)
+            try:
+                new_id = await store.supersede_finding(ctx.kb_id, d.target_finding_id, row)
+            except Exception:  # noqa: BLE001 — atomic: the KB is unchanged
+                logger.warning(
+                    "resolution %s failed for target %s; op not applied",
+                    d.op.value, d.target_finding_id, exc_info=True,
+                )
+                continue
+            affected.append(new_id)
             events.append(
                 ResolutionEvent(
-                    op="UPDATE",
+                    op=d.op.value,
                     candidate_title=f.title,
                     target_finding_id=d.target_finding_id,
+                    new_finding_id=new_id,
                     reason=d.reason,
                 )
             )
 
     if add_rows:
-        affected.extend(await store.insert_findings(add_rows))
+        new_ids = await store.insert_findings(add_rows)
+        affected.extend(new_ids)
+        add_events = [e for e in events if e.op == "ADD"]
+        for e, nid in zip(add_events, new_ids):
+            e.new_finding_id = nid
     if events:
         await store.insert_resolution_events(ctx.kb_id, [e.model_dump() for e in events])
     return ResolutionOutcome(affected_finding_ids=affected, events=events)

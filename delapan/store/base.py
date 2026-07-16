@@ -325,7 +325,7 @@ class Store(Protocol):
 
     # --- resolution event log (memory write decisions) -----------------------
     # Append-only observability for the mem0-style resolver: one row per applied
-    # decision (ADD/UPDATE/NOOP/DELETE). Never load-bearing for retrieval.
+    # decision (ADD/UPDATE/NOOP/SUPERSEDE). Never load-bearing for retrieval.
 
     async def insert_resolution_events(self, kb_id: str, events: list[dict]) -> None:
         """Append resolution decision rows. Best-effort by contract.
