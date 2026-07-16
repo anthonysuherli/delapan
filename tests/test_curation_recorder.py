@@ -22,7 +22,7 @@ class StubStore:
 
     async def match_curation_topics(self, kb_id, emb, n, sim) -> list[dict]:
         self.calls.append(("match", kb_id, n, sim))
-        return self.matches
+        return [m for m in self.matches if m.get("similarity", 0.0) >= sim]
 
     async def upsert_curation_topic(self, row) -> str:
         self.calls.append(("upsert", row))

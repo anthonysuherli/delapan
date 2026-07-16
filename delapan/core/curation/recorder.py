@@ -139,11 +139,6 @@ async def _advance_topic(
     now = _now().isoformat()
     hits = await store.match_curation_topics(kb_id, embedding, 1, cfg.topic_match_threshold)
     hit = hits[0] if hits else None
-    # Belt-and-suspenders: both tiers already filter server-side on `min_similarity`,
-    # but re-check here so a store that returns an unfiltered nearest-neighbor can't
-    # silently misclassify a paraphrase match.
-    if hit is not None and hit.get("similarity", 0.0) < cfg.topic_match_threshold:
-        hit = None
 
     if coverage == "rich":
         if hit:  # coverage flipped → the topic is done
