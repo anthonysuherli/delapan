@@ -342,27 +342,37 @@ class SQLiteStore:
         kb_id: str,
         finding_id: str,
         *,
-        content,
-        confidence,
-        provenance,
-        embedding,
+        content=None,
+        confidence=None,
+        provenance=None,
+        embedding=None,
         title: str | None = None,
     ) -> None:
-        """In-place overwrite + re-embed; id stays stable. JSON-encodes content/
-        provenance; replaces the ``vec_findings`` row when an embedding is given."""
-        sets = ["content = ?", "confidence = ?", "provenance = ?"]
-        vals: list[object] = [
-            _json_dump_maybe(content),
-            confidence,
-            json.dumps(list(provenance or [])),
-        ]
+        """Partial in-place update; id stays stable (KG ``grounded_in`` refs hold).
+
+        Every field is optional and ``None`` means KEEP the current value — the
+        NOOP-corroborate path updates provenance/confidence only and must not
+        clobber the body. Replaces the ``vec_findings`` row when an embedding is
+        given."""
+        sets: list[str] = []
+        vals: list[object] = []
+        if content is not None:
+            sets.append("content = ?")
+            vals.append(_json_dump_maybe(content))
+        if confidence is not None:
+            sets.append("confidence = ?")
+            vals.append(confidence)
+        if provenance is not None:
+            sets.append("provenance = ?")
+            vals.append(json.dumps(list(provenance)))
         if title is not None:
             sets.append("title = ?")
             vals.append(title)
-        self._conn.execute(
-            f"UPDATE findings SET {', '.join(sets)} WHERE id = ? AND kb_id = ?;",
-            (*vals, finding_id, kb_id),
-        )
+        if sets:
+            self._conn.execute(
+                f"UPDATE findings SET {', '.join(sets)} WHERE id = ? AND kb_id = ?;",
+                (*vals, finding_id, kb_id),
+            )
         if embedding is not None:
             self._conn.execute("DELETE FROM vec_findings WHERE finding_id = ?;", (finding_id,))
             self._conn.execute(
@@ -370,6 +380,65 @@ class SQLiteStore:
                 (finding_id, serialize_float32(list(embedding))),
             )
         self._conn.commit()
+
+    async def invalidate_finding(
+        self, kb_id: str, finding_id: str, *, superseded_by: str | None = None
+    ) -> None:
+        """Retire a row in place — no insert. It leaves every read path
+        (match/list/count) but stays readable via get_finding for history."""
+        self._conn.execute(
+            "UPDATE findings SET invalidated_at = ?, superseded_by = ? WHERE id = ? AND kb_id = ?;",
+            (_now_iso(), superseded_by, finding_id, kb_id),
+        )
+        self._conn.commit()
+
+    async def supersede_finding(self, kb_id: str, target_id: str, new_row: dict) -> str:
+        """Insert ``new_row``, then retire ``target_id`` pointing at it. One
+        transaction: a failure leaves the KB untouched (never a dangling
+        invalidation, never an orphaned duplicate). Returns the new id."""
+        new_id = new_row.get("id") or uuid.uuid4().hex
+        now = _now_iso()
+        try:
+            self._conn.execute("BEGIN;")
+            self._conn.execute(
+                """
+                INSERT INTO findings
+                  (id, org_id, kb_id, title, content, category, confidence, tags, provenance,
+                   created_at, valid_from)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    new_id,
+                    _ORG,
+                    kb_id,
+                    new_row.get("title"),
+                    _json_dump_maybe(new_row.get("content")),
+                    new_row.get("category"),
+                    new_row.get("confidence"),
+                    json.dumps(list(new_row.get("tags") or [])),
+                    json.dumps(list(new_row.get("provenance") or [])),
+                    new_row.get("created_at") or now,
+                    new_row.get("valid_from") or now,
+                ),
+            )
+            embedding = new_row.get("embedding")
+            if embedding is not None:
+                self._conn.execute(
+                    "INSERT INTO vec_findings (finding_id, embedding) VALUES (?, ?);",
+                    (new_id, serialize_float32(list(embedding))),
+                )
+            cur = self._conn.execute(
+                "UPDATE findings SET invalidated_at = ?, superseded_by = ? "
+                "WHERE id = ? AND kb_id = ? AND invalidated_at IS NULL;",
+                (now, new_id, target_id, kb_id),
+            )
+            if cur.rowcount != 1:
+                raise ValueError(f"supersede target {target_id!r} not live in kb {kb_id!r}")
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        return new_id
 
     def get_finding(self, kb_id: str, finding_id: str) -> dict:
         """One finding scoped to `kb_id`. Raises if absent. JSON cols decoded."""

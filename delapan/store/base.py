@@ -48,16 +48,29 @@ class Store(Protocol):
         kb_id: str,
         finding_id: str,
         *,
-        content,
-        confidence,
-        provenance,
-        embedding,
+        content=None,
+        confidence=None,
+        provenance=None,
+        embedding=None,
         title: str | None = None,
     ) -> None:
-        """Overwrite a finding in place, keeping its id STABLE (so KG `grounded_in`
-        references stay valid). Replaces content/confidence/provenance and
-        re-indexes the embedding; renames the title when given. The caller computes
-        the merged values — this is a straight overwrite, not a merge."""
+        """Partial in-place update, keeping the id STABLE (so KG `grounded_in`
+        references stay valid). Every field is optional; ``None`` means KEEP the
+        current value. Re-indexes the embedding when one is given."""
+        ...
+
+    async def invalidate_finding(
+        self, kb_id: str, finding_id: str, *, superseded_by: str | None = None
+    ) -> None:
+        """Retire a finding in place (no insert): stamp `invalidated_at` and an
+        optional forward pointer. It disappears from match/list/count but stays
+        readable via `get_finding`. Findings are never deleted to dedup them."""
+        ...
+
+    async def supersede_finding(self, kb_id: str, target_id: str, new_row: dict) -> str:
+        """Insert `new_row` and retire `target_id` pointing at it, atomically.
+        Returns the new finding id. Raises if the target is absent or already
+        retired — leaving the KB unchanged."""
         ...
 
     def get_finding(self, kb_id: str, finding_id: str) -> dict:
