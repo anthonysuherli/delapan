@@ -46,3 +46,33 @@ def test_memory_resolution_disabled_by_default():
 
     get_config.cache_clear()
     assert get_config().memory.enabled is False
+
+
+def test_curation_defaults():
+    from delapan.core.config import AppConfig
+
+    c = AppConfig().curation
+    assert c.enabled is True
+    assert c.record_search is True
+    assert c.topic_match_threshold == 0.83
+    assert c.recency_half_life_days == 14
+    assert c.gap_weight == 2.0
+    assert c.sparse_weight == 1.0
+    assert c.backlog_limit == 20
+    assert c.min_query_chars == 8
+    assert c.events_retention_days == 90
+    assert c.prune_sample_rate == 0.01
+
+
+def test_curation_env_override(monkeypatch):
+    from delapan.core.config import get_config
+
+    monkeypatch.setenv("DLP_CURATION__TOPIC_MATCH_THRESHOLD", "0.91")
+    monkeypatch.setenv("DLP_CURATION__ENABLED", "false")
+    get_config.cache_clear()
+    try:
+        cfg = get_config()
+        assert cfg.curation.topic_match_threshold == 0.91
+        assert cfg.curation.enabled is False
+    finally:
+        get_config.cache_clear()

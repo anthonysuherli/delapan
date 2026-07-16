@@ -152,6 +152,22 @@ memory:
   max_candidates_per_pass: 25       # batch cap for one LLM resolution pass
   reasoning_effort: null
 
+# Gap-driven curation flywheel: persist each coverage verdict, aggregate gap/sparse
+# queries into a recurrence-ranked backlog, consume it explicitly. On by default —
+# recording is zero-latency, best-effort and invisible; nothing changes until someone
+# reads the backlog or omits `prompt` on explore.
+curation:
+  enabled: true                # kill-switch: no recording, no backlog, explore requires a prompt
+  record_search: true          # also record delapan_search verdicts
+  topic_match_threshold: 0.83  # cosine sim for paraphrase→topic assignment (calibrate w/ E1)
+  recency_half_life_days: 14   # backlog score decay
+  gap_weight: 2.0              # gap topics outrank sparse
+  sparse_weight: 1.0
+  backlog_limit: 20            # default view size
+  min_query_chars: 8           # skip trivial queries
+  events_retention_days: 90    # access_events prune horizon
+  prune_sample_rate: 0.01      # P(a recording also prunes its KB)
+
 # Domain-concept (glossary) extraction. Mines terms-of-art from findings into
 # kb_concepts. Gateway slugs use DOTS (pipeline path).
 concepts:
