@@ -1,6 +1,6 @@
 """Findings / synopsis / resume routes — the KB read surface plus finding delete.
 
-    GET    /api/projects/{p}/kbs/{k}/findings        ──► list_findings (category/limit)
+    GET    /api/projects/{p}/kbs/{k}/findings        ──► list_findings (category/limit) → {count,total,findings}
     GET    /api/projects/{p}/kbs/{k}/findings/{id}   ──► get_finding (content+provenance)*
     DELETE /api/projects/{p}/kbs/{k}/findings/{id}   ──► delete_finding
     GET    /api/projects/{p}/kbs/{k}/synopsis        ──► load_synopsis (row or null)

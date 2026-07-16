@@ -246,3 +246,38 @@ def test_explore_missing_keys_emits_sse_error(client, kb):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/event-stream")
     assert '"phase": "error"' in r.text and "missing required keys" in r.text
+
+
+def test_findings_route_returns_total(client, kb):
+    store, kb_id = kb
+    asyncio.run(
+        store.insert_findings(
+            [
+                {
+                    "id": "f1",
+                    "kb_id": kb_id,
+                    "title": "T1",
+                    "content": {"summary": "body text"},
+                    "category": "fact",
+                    "confidence": 0.8,
+                    "tags": ["t"],
+                    "provenance": [{"url": "http://example.com"}],
+                },
+                {
+                    "id": "f2",
+                    "kb_id": kb_id,
+                    "title": "T2",
+                    "content": {"summary": "more body"},
+                    "category": "fact",
+                    "confidence": 0.9,
+                    "tags": [],
+                    "provenance": [],
+                },
+            ]
+        )
+    )
+    res = client.get(f"{BASE}/findings?limit=1")
+    assert res.status_code == 200
+    body = res.json()
+    assert set(body) >= {"count", "total", "findings"}
+    assert body["count"] <= body["total"]
