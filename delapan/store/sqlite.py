@@ -126,6 +126,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_kg_schemas_kb_version ON kg_schemas(kb_id,
 CREATE TABLE IF NOT EXISTS resolution_events (
   id TEXT PRIMARY KEY, org_id TEXT, kb_id TEXT NOT NULL,
   op TEXT NOT NULL, candidate_title TEXT, target_finding_id TEXT,
+  new_finding_id TEXT, details TEXT,
   reason TEXT, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_resolution_events_kb ON resolution_events(kb_id);
 """
@@ -143,6 +144,10 @@ _ADD_COLUMN_MIGRATIONS: list[str] = [
     "ALTER TABLE findings ADD COLUMN valid_from TEXT;",
     "ALTER TABLE findings ADD COLUMN invalidated_at TEXT;",
     "ALTER TABLE findings ADD COLUMN superseded_by TEXT;",
+    # 0010: audit an op's effect, not just its verdict — the row it created and
+    # (for NOOP) the urls merged plus the confidence delta.
+    "ALTER TABLE resolution_events ADD COLUMN new_finding_id TEXT;",
+    "ALTER TABLE resolution_events ADD COLUMN details TEXT;",
 ]
 
 # Cap on how many grounding finding ids a long-lived node (a repo touched for
@@ -1129,8 +1134,9 @@ class SQLiteStore:
                 self._conn.execute(
                     """
                     INSERT INTO resolution_events
-                      (id, org_id, kb_id, op, candidate_title, target_finding_id, reason, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                      (id, org_id, kb_id, op, candidate_title, target_finding_id,
+                       new_finding_id, details, reason, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
                         uuid.uuid4().hex,
@@ -1139,6 +1145,8 @@ class SQLiteStore:
                         e.get("op"),
                         e.get("candidate_title"),
                         e.get("target_finding_id"),
+                        e.get("new_finding_id"),
+                        _json_dump_maybe(e.get("details")),
                         e.get("reason"),
                         _now_iso(),
                     ),
@@ -1151,7 +1159,8 @@ class SQLiteStore:
         """Most-recent resolution events for `kb_id`, newest first (cap 500)."""
         n = min(limit or 50, 500)
         rows = self._conn.execute(
-            "SELECT id, op, candidate_title, target_finding_id, reason, created_at "
+            "SELECT id, op, candidate_title, target_finding_id, new_finding_id, details, "
+            "reason, created_at "
             "FROM resolution_events WHERE kb_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?;",
             (kb_id, n),
         ).fetchall()
@@ -1161,6 +1170,8 @@ class SQLiteStore:
                 "op": r["op"],
                 "candidate_title": r["candidate_title"],
                 "target_finding_id": r["target_finding_id"],
+                "new_finding_id": r["new_finding_id"],
+                "details": _json_load(r["details"], None),
                 "reason": r["reason"],
                 "created_at": r["created_at"],
             }

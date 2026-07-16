@@ -317,8 +317,9 @@ class Store(Protocol):
     async def insert_resolution_events(self, kb_id: str, events: list[dict]) -> None:
         """Append resolution decision rows. Best-effort by contract.
 
-        Each row carries ``op, candidate_title, target_finding_id, reason``;
-        ``op`` is one of ADD/UPDATE/NOOP/DELETE. No-op on an empty list."""
+        Each row carries ``op, candidate_title, target_finding_id, new_finding_id,
+        details, reason``; ``op`` is one of ADD/UPDATE/NOOP/SUPERSEDE. ``details``
+        is an op-specific JSON blob. No-op on an empty list."""
         ...
 
     def list_resolution_events(self, kb_id: str, limit: int | None = None) -> list[dict]:

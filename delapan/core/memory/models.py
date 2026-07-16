@@ -44,6 +44,8 @@ class ResolutionEvent(BaseModel):
     op: str
     candidate_title: str
     target_finding_id: str | None = None
+    new_finding_id: str | None = None  # row created by ADD/UPDATE/SUPERSEDE
+    details: dict | None = None  # op-specific effect (NOOP: merged urls, confidence delta)
     reason: str = ""
 
 

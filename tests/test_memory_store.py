@@ -32,6 +32,30 @@ async def test_resolution_events_scoped_by_kb(store):
 
 
 @pytest.mark.asyncio
+async def test_resolution_events_record_new_id_and_details(store):
+    org, pid = store.resolve_project("evt", create=True)
+    kb = store.resolve_kb(org, pid, "main", create=True)
+    await store.insert_resolution_events(
+        kb,
+        [
+            {
+                "op": "NOOP",
+                "candidate_title": "dup",
+                "target_finding_id": "t1",
+                "new_finding_id": None,
+                "details": {"merged_urls": ["http://a"], "confidence_before": 0.4,
+                            "confidence_after": 0.64},
+                "reason": "same fact",
+            }
+        ],
+    )
+    rows = store.list_resolution_events(kb)
+    assert rows[0]["op"] == "NOOP"
+    assert rows[0]["details"]["merged_urls"] == ["http://a"]
+    assert rows[0]["new_finding_id"] is None
+
+
+@pytest.mark.asyncio
 async def test_update_finding_in_place_keeps_id(store):
     org, pid = store.resolve_project("updA", create=True)
     kb = store.resolve_kb(org, pid, "main", create=True)
