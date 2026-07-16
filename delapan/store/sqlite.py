@@ -78,7 +78,7 @@ def _finding_from_row(r) -> dict:
 _FINDING_MATCH_COLS = ("id", "title", "content", "category", "confidence", "tags", "provenance")
 
 LIST_DEFAULT_LIMIT = 20
-LIST_MAX_LIMIT = 100
+LIST_MAX_LIMIT = 1000
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (

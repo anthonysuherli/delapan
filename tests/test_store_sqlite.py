@@ -103,3 +103,28 @@ async def test_get_finding_global_ignores_kb_scope(store):
     assert store.get_finding_global("g1")["title"] == "G"
     with pytest.raises(Exception):
         store.get_finding_global("missing")
+
+
+@pytest.mark.asyncio
+async def test_list_findings_returns_more_than_the_old_100_cap(store):
+    org_id, project_id = store.resolve_project("repoCap", create=True)
+    kb_id = store.resolve_kb(org_id, project_id, "main", create=True)
+    rows = [
+        {
+            "id": f"f{i:07d}",
+            "org_id": org_id,
+            "kb_id": kb_id,
+            "title": f"T{i}",
+            "content": {"summary": "s"},
+            "category": "fact",
+            "confidence": 0.5,
+            "tags": [],
+            "provenance": [],
+            "embedding": [0.01] * 1536,
+        }
+        for i in range(120)
+    ]
+    await store.insert_findings(rows)
+    got = store.list_findings(kb_id, limit=1000)
+    assert got["count"] == 120
+    assert len(got["findings"]) == 120

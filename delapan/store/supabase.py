@@ -20,7 +20,7 @@ from delapan.core.clients.supabase import user_client
 
 _MAX_GROUNDED = 50
 LIST_DEFAULT_LIMIT = 20
-LIST_MAX_LIMIT = 100
+LIST_MAX_LIMIT = 1000
 
 
 def _now_iso() -> str:
