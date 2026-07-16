@@ -293,6 +293,39 @@ class SQLiteStore:
             )
         return out
 
+    def _insert_finding_row(self, row: dict, fid: str, timestamp: str) -> None:
+        """Execute the findings + vec_findings inserts for one row. Does NOT
+        commit — the caller controls the transaction boundary (insert_findings
+        commits once after its loop; supersede_finding commits once after the
+        paired invalidate)."""
+        self._conn.execute(
+            """
+            INSERT INTO findings
+              (id, org_id, kb_id, title, content, category, confidence, tags, provenance,
+               created_at, valid_from)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                fid,
+                _ORG,
+                row.get("kb_id"),
+                row.get("title"),
+                _json_dump_maybe(row.get("content")),
+                row.get("category"),
+                row.get("confidence"),
+                json.dumps(list(row.get("tags") or [])),
+                json.dumps(list(row.get("provenance") or [])),
+                row.get("created_at") or timestamp,
+                row.get("valid_from") or timestamp,
+            ),
+        )
+        embedding = row.get("embedding")
+        if embedding is not None:
+            self._conn.execute(
+                "INSERT INTO vec_findings (finding_id, embedding) VALUES (?, ?);",
+                (fid, serialize_float32(list(embedding))),
+            )
+
     async def insert_findings(self, rows: list[dict]) -> list[str]:
         """Insert pre-embedded finding rows; return new ids in input order.
 
@@ -307,33 +340,7 @@ class SQLiteStore:
         for row in rows:
             fid = row.get("id") or uuid.uuid4().hex
             ids.append(fid)
-            self._conn.execute(
-                """
-                INSERT INTO findings
-                  (id, org_id, kb_id, title, content, category, confidence, tags, provenance,
-                   created_at, valid_from)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """,
-                (
-                    fid,
-                    _ORG,
-                    row.get("kb_id"),
-                    row.get("title"),
-                    _json_dump_maybe(row.get("content")),
-                    row.get("category"),
-                    row.get("confidence"),
-                    json.dumps(list(row.get("tags") or [])),
-                    json.dumps(list(row.get("provenance") or [])),
-                    row.get("created_at") or _now_iso(),
-                    row.get("valid_from") or _now_iso(),
-                ),
-            )
-            embedding = row.get("embedding")
-            if embedding is not None:
-                self._conn.execute(
-                    "INSERT INTO vec_findings (finding_id, embedding) VALUES (?, ?);",
-                    (fid, serialize_float32(list(embedding))),
-                )
+            self._insert_finding_row(row, fid, _now_iso())
         self._conn.commit()
         return ids
 
@@ -400,33 +407,7 @@ class SQLiteStore:
         now = _now_iso()
         try:
             self._conn.execute("BEGIN;")
-            self._conn.execute(
-                """
-                INSERT INTO findings
-                  (id, org_id, kb_id, title, content, category, confidence, tags, provenance,
-                   created_at, valid_from)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """,
-                (
-                    new_id,
-                    _ORG,
-                    kb_id,
-                    new_row.get("title"),
-                    _json_dump_maybe(new_row.get("content")),
-                    new_row.get("category"),
-                    new_row.get("confidence"),
-                    json.dumps(list(new_row.get("tags") or [])),
-                    json.dumps(list(new_row.get("provenance") or [])),
-                    new_row.get("created_at") or now,
-                    new_row.get("valid_from") or now,
-                ),
-            )
-            embedding = new_row.get("embedding")
-            if embedding is not None:
-                self._conn.execute(
-                    "INSERT INTO vec_findings (finding_id, embedding) VALUES (?, ?);",
-                    (new_id, serialize_float32(list(embedding))),
-                )
+            self._insert_finding_row({**new_row, "kb_id": kb_id}, new_id, now)
             cur = self._conn.execute(
                 "UPDATE findings SET invalidated_at = ?, superseded_by = ? "
                 "WHERE id = ? AND kb_id = ? AND invalidated_at IS NULL;",
