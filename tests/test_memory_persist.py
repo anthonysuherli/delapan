@@ -252,6 +252,73 @@ async def test_update_versions_the_row_and_merges_provenance(store, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_noop_with_vanished_target_falls_back_to_add(store, monkeypatch):
+    org, pid = store.resolve_project("noopC", create=True)
+    kb = store.resolve_kb(org, pid, "main", create=True)
+    ctx = SimpleNamespace(org_id=org, kb_id=kb, project_id=pid)
+    cfg = await _cfg_with_memory(monkeypatch)
+
+    # Resolver claims a NOOP duplicate against a target that no longer exists
+    # (e.g. retired by another writer between resolve() and apply()).
+    monkeypatch.setattr(
+        persist_mod, "resolve",
+        lambda *a, **k: _decisions([
+            ResolutionDecision(candidate_index=0, op=ResolutionOp.NOOP,
+                                target_finding_id="ghost-id", reason="dup?")
+        ]),
+    )
+    f = _finding(pid, "Orphaned NOOP candidate", {"k": "still worth keeping"})
+    out = await persist_mod.resolve_and_persist(ctx, store, [f], cfg)
+
+    assert len(out.affected_finding_ids) == 1      # candidate was persisted, not dropped
+    assert store.count_findings(kb) == 1
+    assert len(out.events) == 1
+    assert out.events[0].op == "ADD"               # not a bare NOOP-skip event
+    assert "noop target vanished" in out.events[0].reason
+
+
+@pytest.mark.asyncio
+async def test_failing_supersede_finding_falls_back_to_add(store, monkeypatch):
+    org, pid = store.resolve_project("updB", create=True)
+    kb = store.resolve_kb(org, pid, "main", create=True)
+    ctx = SimpleNamespace(org_id=org, kb_id=kb, project_id=pid)
+    cfg = await _cfg_with_memory(monkeypatch)
+
+    monkeypatch.setattr(
+        persist_mod, "resolve",
+        lambda *a, **k: _decisions([ResolutionDecision(candidate_index=0, op=ResolutionOp.ADD)]),
+    )
+    old = _finding(pid, "Pricing", {"k": "old detail"})
+    old.provenance = [{"url": "http://a"}]
+    old_id = (await persist_mod.resolve_and_persist(ctx, store, [old], cfg)).affected_finding_ids[0]
+
+    # Target is still live at the initial get_finding check, but the
+    # supersede_finding write itself fails (narrow race: retired concurrently).
+    monkeypatch.setattr(
+        persist_mod, "resolve",
+        lambda *a, **k: _decisions([
+            ResolutionDecision(candidate_index=0, op=ResolutionOp.UPDATE, target_finding_id=old_id)
+        ]),
+    )
+
+    async def _boom(*a, **k):
+        raise RuntimeError("supersede target not live")
+
+    monkeypatch.setattr(store, "supersede_finding", _boom)
+
+    f2 = _finding(pid, "Pricing", {"k": "refined detail"})
+    f2.provenance = [{"url": "http://b"}]
+    out = await persist_mod.resolve_and_persist(ctx, store, [f2], cfg)
+
+    assert len(out.affected_finding_ids) == 1      # candidate was persisted, not dropped
+    assert store.count_findings(kb) == 2           # old (never retired) + new ADD row
+    assert store.get_finding(kb, old_id)["superseded_by"] is None  # untouched — write never applied
+    assert len(out.events) == 1
+    assert out.events[0].op == "ADD"               # not a bare warning+drop
+    assert "failed" in out.events[0].reason
+
+
+@pytest.mark.asyncio
 async def test_cloud_tier_forces_pure_add(store, monkeypatch):
     org, pid = store.resolve_project("guard", create=True)
     kb = store.resolve_kb(org, pid, "main", create=True)

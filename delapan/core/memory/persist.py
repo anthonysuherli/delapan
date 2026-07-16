@@ -98,12 +98,12 @@ async def resolve_and_persist(
             # re-runs leave the row byte-identical); the event is still logged.
             try:
                 target = store.get_finding(ctx.kb_id, d.target_finding_id)
-            except Exception:  # noqa: BLE001 — target vanished; skip and log
+            except Exception:  # noqa: BLE001 — target vanished → ADD instead
+                add_rows.append(_row_from_candidate(ctx, f, emb))
                 events.append(
                     ResolutionEvent(
-                        op="NOOP", candidate_title=f.title,
-                        target_finding_id=d.target_finding_id,
-                        reason="noop target missing; skipped",
+                        op="ADD", candidate_title=f.title,
+                        reason="noop target vanished before write; added",
                     )
                 )
                 continue
@@ -160,10 +160,19 @@ async def resolve_and_persist(
             row["confidence"] = confidence_from_sources(_distinct_urls(row["provenance"]) or 1)
             try:
                 new_id = await store.supersede_finding(ctx.kb_id, d.target_finding_id, row)
-            except Exception:  # noqa: BLE001 — atomic: the KB is unchanged
+            except Exception:  # noqa: BLE001 — atomic: the KB is unchanged → ADD instead
                 logger.warning(
-                    "resolution %s failed for target %s; op not applied",
+                    "resolution %s failed for target %s; falling back to ADD",
                     d.op.value, d.target_finding_id, exc_info=True,
+                )
+                add_rows.append(row)
+                events.append(
+                    ResolutionEvent(
+                        op="ADD", candidate_title=f.title,
+                        reason=(
+                            f"{d.op.value.lower()} failed (target retired concurrently?); added"
+                        ),
+                    )
                 )
                 continue
             affected.append(new_id)
