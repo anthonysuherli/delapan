@@ -80,6 +80,7 @@ async def resume(
     if query and not get_settings().openai_api_key:
         return JSONResponse(status_code=503, content={"error": "embeddings unavailable"})
     preamble, coverage = await select_preamble(
-        query or None, store=store, kb_id=ctx.kb_id, depth=depth
+        query or None, store=store, kb_id=ctx.kb_id, depth=depth,
+        surface="resume", org_id=ctx.org_id,
     )
     return JSONResponse({"preamble": preamble, "coverage": coverage})

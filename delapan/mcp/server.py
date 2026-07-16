@@ -59,7 +59,9 @@ async def delapan_resume(
     except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
         return {"error": f"KB not found ({project}/{kb}): {exc}"}
     store = get_store(ctx.access_token, org_id=ctx.org_id)
-    preamble, coverage = await select_preamble(query, store=store, kb_id=ctx.kb_id, depth=depth)
+    preamble, coverage = await select_preamble(
+        query, store=store, kb_id=ctx.kb_id, depth=depth, surface="resume", org_id=ctx.org_id
+    )
     return {"banner": DELAPAN_BANNER, "preamble": preamble, "coverage": coverage}
 
 

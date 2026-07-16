@@ -19,6 +19,7 @@ from xml.sax.saxutils import escape
 from delapan.core.agent.synopsis import load_synopsis
 from delapan.core.clients.embeddings import embed_text
 from delapan.core.config import TiersConfig, get_config
+from delapan.core.curation.recorder import schedule_record
 from delapan.store import Store
 
 Coverage = Literal["rich", "sparse", "gap"]
@@ -134,8 +135,15 @@ async def select_preamble(
     store: Store,
     kb_id: str,
     depth: Depth = "normal",
+    surface: str | None = None,
+    org_id: str | None = None,
 ) -> tuple[str, Coverage]:
-    """IO entry: load synopsis + (optional) band query matches → (xml, coverage)."""
+    """IO entry: load synopsis + (optional) band query matches → (xml, coverage).
+
+    When `surface` is set (and a query exists), the verdict is recorded for the
+    curation backlog — fire-and-forget, reusing the embedding computed here, so
+    the returned preamble and this call's latency are unchanged. `surface=None`
+    keeps every existing caller byte-identical."""
     cfg = get_config().tiers
     syn_row = load_synopsis(store, kb_id)
     synopsis = (syn_row or {}).get("content") or []
@@ -153,6 +161,17 @@ async def select_preamble(
         )
         bands = band_findings(rows or [], cfg)
         coverage = assess_coverage(bands, cfg)
+        if surface:
+            schedule_record(
+                store,
+                kb_id=kb_id,
+                org_id=org_id or "",
+                surface=surface,
+                query=query,
+                coverage=coverage,
+                bands=bands,
+                embedding=qvec,
+            )
 
     return render_preamble(synopsis, bands, depth=depth, cfg=cfg), coverage
 
