@@ -31,18 +31,24 @@ def test_memory_config_defaults_and_env_override(monkeypatch):
 
     get_config.cache_clear()
     cfg = get_config()
-    assert cfg.memory.enabled is False
+    assert cfg.memory.enabled is True  # config.yaml enables this on the local tier (Task 8)
     assert cfg.memory.neighbor_top_k == 5
     assert cfg.memory.resolution_model == "anthropic/claude-sonnet-4.6"
 
-    monkeypatch.setenv("DLP_MEMORY__ENABLED", "true")
+    monkeypatch.setenv("DLP_MEMORY__ENABLED", "false")
     get_config.cache_clear()
-    assert get_config().memory.enabled is True
+    assert get_config().memory.enabled is False
     get_config.cache_clear()
 
 
-def test_memory_resolution_disabled_by_default():
+def test_memory_resolution_enabled_via_yaml():
     from delapan.core.config import get_config
 
     get_config.cache_clear()
-    assert get_config().memory.enabled is False
+    assert get_config().memory.enabled is True
+
+
+def test_memory_code_default_stays_dark():
+    from delapan.core.config import MemoryConfig
+
+    assert MemoryConfig().enabled is False

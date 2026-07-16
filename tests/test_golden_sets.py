@@ -16,7 +16,6 @@ import pytest
 import yaml
 
 from delapan.core.agent.preamble import assess_coverage, band_findings
-from delapan.core.config import TiersConfig
 
 GOLDEN = Path(__file__).parent / "golden"
 
@@ -25,21 +24,7 @@ def _sets():
     return sorted(GOLDEN.glob("*.yaml"))
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        pytest.param(
-            p,
-            marks=pytest.mark.xfail(
-                p.stem == "delapan_engine",
-                reason="bands tuned for text-embedding-3-small; recalibrated in Task 8",
-                strict=True,
-            ),
-        )
-        for p in _sets()
-    ],
-    ids=lambda p: p.stem,
-)
+@pytest.mark.parametrize("path", _sets(), ids=lambda p: p.stem)
 @pytest.mark.asyncio
 async def test_golden_set(path, store):
     spec = yaml.safe_load(path.read_text())
@@ -59,7 +44,10 @@ async def test_golden_set(path, store):
         ]
     )
 
-    cfg = TiersConfig()
+    from delapan.core.config import get_config
+
+    get_config.cache_clear()
+    cfg = get_config().tiers
     for q in spec["queries"]:
         hits = await store.match_findings(
             kb, vectors[f"q:{q['query']}"], match_count=20, min_similarity=cfg.band3_min

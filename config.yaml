@@ -34,10 +34,21 @@ search:
   max_finding_chunks: 25            # shared hard cap on findings in a preamble # (inert — no longer read; preamble is bounded by tiers.preamble_char_budget)
 
 # Tier model: similarity bands + always-on preamble budget.
+# Calibrated for google/gemini-embedding-001 (scripts/calibrate_bands.py,
+# 2026-07-16, delapan/master vs actuary/ifrs17-hk, live Supabase data). Gemini's
+# similarity distribution runs much denser than text-embedding-3-small's — both
+# genuinely off-topic (actuary) and topically-adjacent-but-generic (master's own
+# non-engine findings) content cluster in the same 0.48-0.65 range, so the old
+# .55/.40/.25 bands let shared-vocabulary noise clear "rich". band1_min is set
+# above the observed ceiling of both classes (off-topic max ~0.57; the same-KB
+# generic-noise top-3 for delapan's-own-architecture-style queries reached
+# ~0.60-0.62) while verbatim/strong matches still clear it with margin
+# (0.65-0.77 observed). Re-run when the embedding model changes — thresholds do
+# not transfer across models.
 tiers:
-  band1_min: 0.55
-  band2_min: 0.40
-  band3_min: 0.25
+  band1_min: 0.62
+  band2_min: 0.55
+  band3_min: 0.50
   rich_hit_count: 3
   preamble_char_budget: 7000
 
@@ -143,7 +154,7 @@ knowledge_graph:
 # Memory resolution — decide ADD/UPDATE/NOOP/DELETE per new finding against the
 # top-k existing findings before persisting. enabled=false → pure ADD (append).
 memory:
-  enabled: false  # flipped true at plan Task 8 (local tier only; cloud is guarded)
+  enabled: true  # local tier; cloud stays pure-ADD behind the persist guard until parity
   resolution_model: anthropic/claude-sonnet-4.6   # cheaper than the KG's Opus; runs every explore
   resolution_fallback_model: openai/gpt-5.4-mini
   temperature: 0.0
