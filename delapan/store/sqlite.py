@@ -58,6 +58,9 @@ _FINDING_COLS = (
     "tags",
     "provenance",
     "created_at",
+    "valid_from",
+    "invalidated_at",
+    "superseded_by",
 )
 _FINDING_LIST_COLS = ("id", "title", "category", "confidence", "tags", "created_at")
 # match_findings returns the full finding minus created_at, plus a computed similarity.
@@ -77,6 +80,9 @@ def _finding_from_row(r) -> dict:
         "tags": _json_load(r["tags"], []),
         "provenance": _json_load(r["provenance"], []),
         "created_at": r["created_at"],
+        "valid_from": r["valid_from"],
+        "invalidated_at": r["invalidated_at"],
+        "superseded_by": r["superseded_by"],
     }
 _FINDING_MATCH_COLS = ("id", "title", "content", "category", "confidence", "tags", "provenance")
 
@@ -92,7 +98,8 @@ CREATE TABLE IF NOT EXISTS kbs (
 CREATE TABLE IF NOT EXISTS findings (
   id TEXT PRIMARY KEY, org_id TEXT NOT NULL, kb_id TEXT NOT NULL,
   title TEXT, content TEXT, category TEXT, confidence REAL,
-  tags TEXT, provenance TEXT, created_at TEXT NOT NULL);
+  tags TEXT, provenance TEXT, created_at TEXT NOT NULL,
+  valid_from TEXT, invalidated_at TEXT, superseded_by TEXT);
 CREATE VIRTUAL TABLE IF NOT EXISTS vec_findings USING vec0(finding_id TEXT, embedding float[1536]);
 CREATE TABLE IF NOT EXISTS kb_synopsis (
   kb_id TEXT PRIMARY KEY, org_id TEXT, content TEXT,
@@ -131,6 +138,11 @@ _ADD_COLUMN_MIGRATIONS: list[str] = [
     "ALTER TABLE kbs ADD COLUMN init_offered_at TEXT;",
     # 0008: schema-drift offer debounce — residual count stamped at last drift offer
     "ALTER TABLE kbs ADD COLUMN drift_offered_count INTEGER;",
+    # 0009: bi-temporal write path — when a fact became current, when it was retired,
+    # and the row that replaced it. NULL invalidated_at = live.
+    "ALTER TABLE findings ADD COLUMN valid_from TEXT;",
+    "ALTER TABLE findings ADD COLUMN invalidated_at TEXT;",
+    "ALTER TABLE findings ADD COLUMN superseded_by TEXT;",
 ]
 
 # Cap on how many grounding finding ids a long-lived node (a repo touched for
@@ -202,6 +214,16 @@ class SQLiteStore:
                 self._conn.commit()
             except Exception:  # noqa: BLE001 — column already present
                 pass
+        # valid_from has no column default (SQLite forbids non-constant ADD COLUMN
+        # defaults) — seed pre-existing rows from created_at; new rows are stamped
+        # by insert_findings. Idempotent: only NULLs are touched.
+        try:
+            self._conn.execute(
+                "UPDATE findings SET valid_from = created_at WHERE valid_from IS NULL;"
+            )
+            self._conn.commit()
+        except Exception:  # noqa: BLE001 — table may not exist yet on a fresh DB
+            pass
 
     # --- findings — hot path -------------------------------------------------
 
@@ -234,6 +256,7 @@ class SQLiteStore:
             placeholders = ",".join("?" for _ in categories)
             where.append(f"f.category IN ({placeholders})")
             params.extend(categories)
+        where.append("f.invalidated_at IS NULL")
         params.append(match_count)
         rows = self._conn.execute(
             f"""
@@ -282,8 +305,9 @@ class SQLiteStore:
             self._conn.execute(
                 """
                 INSERT INTO findings
-                  (id, org_id, kb_id, title, content, category, confidence, tags, provenance, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                  (id, org_id, kb_id, title, content, category, confidence, tags, provenance,
+                   created_at, valid_from)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     fid,
@@ -296,6 +320,7 @@ class SQLiteStore:
                     json.dumps(list(row.get("tags") or [])),
                     json.dumps(list(row.get("provenance") or [])),
                     row.get("created_at") or _now_iso(),
+                    row.get("valid_from") or _now_iso(),
                 ),
             )
             embedding = row.get("embedding")
@@ -366,18 +391,26 @@ class SQLiteStore:
         return _finding_from_row(r)
 
     def list_findings(
-        self, kb_id: str, category: str | None = None, limit: int | None = None
+        self,
+        kb_id: str,
+        category: str | None = None,
+        limit: int | None = None,
+        include_invalidated: bool = False,
     ) -> dict:
         """Most-recent findings in `kb_id`. Returns {"count", "findings"}.
 
         List view omits ``content``/``provenance`` (matching SupabaseStore);
-        optional category filter; default/max limits mirror findings/service."""
+        optional category filter; default/max limits mirror findings/service.
+        Live rows only unless `include_invalidated` — retired rows stay
+        reachable for history/audit, never for retrieval."""
         n = min(limit or LIST_DEFAULT_LIMIT, LIST_MAX_LIMIT)
         sql = f"SELECT {', '.join(_FINDING_LIST_COLS)} FROM findings WHERE kb_id = ?"
         params: list[object] = [kb_id]
         if category:
             sql += " AND category = ?"
             params.append(category)
+        if not include_invalidated:
+            sql += " AND invalidated_at IS NULL"
         sql += " ORDER BY created_at DESC LIMIT ?;"
         params.append(n)
         rows = self._conn.execute(sql, params).fetchall()
@@ -395,9 +428,12 @@ class SQLiteStore:
         return {"count": len(findings), "findings": findings}
 
     def count_findings(self, kb_id: str) -> int:
-        """Exact finding count for `kb_id` (uncapped, unlike list_findings)."""
+        """Exact LIVE finding count for `kb_id` (uncapped, unlike list_findings).
+        Retired rows (invalidated_at set) are excluded — this drives synopsis
+        rebuild_delta, which must track live knowledge."""
         r = self._conn.execute(
-            "SELECT COUNT(*) AS n FROM findings WHERE kb_id = ?;", (kb_id,)
+            "SELECT COUNT(*) AS n FROM findings WHERE kb_id = ? AND invalidated_at IS NULL;",
+            (kb_id,),
         ).fetchone()
         return int(r["n"])
 

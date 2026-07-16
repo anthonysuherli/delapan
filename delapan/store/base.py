@@ -75,9 +75,15 @@ class Store(Protocol):
         ...
 
     def list_findings(
-        self, kb_id: str, category: str | None = None, limit: int | None = None
+        self,
+        kb_id: str,
+        category: str | None = None,
+        limit: int | None = None,
+        include_invalidated: bool = False,
     ) -> dict:
-        """Most-recent findings in `kb_id`. Returns {"count", "findings"}."""
+        """Most-recent findings in `kb_id`. Returns {"count", "findings"}.
+        Live rows only unless `include_invalidated` — retired rows stay
+        reachable for history/audit, never for retrieval."""
         ...
 
     def delete_finding(self, kb_id: str, finding_id: str) -> dict:
@@ -85,7 +91,7 @@ class Store(Protocol):
         ...
 
     def count_findings(self, kb_id: str) -> int:
-        """Exact number of findings in `kb_id` (uncapped, unlike list_findings)."""
+        """Exact number of LIVE findings in `kb_id` (uncapped, unlike list_findings)."""
         ...
 
     # --- synopsis spine ------------------------------------------------------
