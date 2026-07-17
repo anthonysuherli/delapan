@@ -19,17 +19,20 @@ import json
 from datetime import datetime, timezone
 from typing import AsyncIterator, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from delapan.api.deps import missing_pipeline_keys, resolve_kb_or_404
 from delapan.core.agent.preamble import select_preamble
 from delapan.core.agent.state import TenantContext
+from delapan.core.agent.synopsis import maybe_rebuild_synopsis
 from delapan.core.canvas.answer import stream_answer
 from delapan.core.config import get_config
 from delapan.core.exploration import run_exploration
 from delapan.core.exploration.models import Finding
+from delapan.core.knowledge_graph.builder import schedule_kg_update
+from delapan.core.memory.persist import resolve_and_persist
 from delapan.store import Store
 
 router = APIRouter(prefix="/api/projects/{project}/kbs/{kb}")
@@ -151,3 +154,55 @@ async def _search_events(
 async def canvas_search(project: str, kb: str, body: CanvasSearchBody) -> StreamingResponse:
     ctx, store = resolve_kb_or_404(project, kb)
     return StreamingResponse(_search_events(ctx, store, body), media_type="text/event-stream")
+
+
+class CandidateIn(BaseModel):
+    category: str = ""
+    title: str
+    content: dict
+    confidence: float = 0.0
+    tags: list[str] = Field(default_factory=list)
+    provenance: list[dict] = Field(default_factory=list)
+
+
+class KeepBody(BaseModel):
+    candidates: list[CandidateIn]
+
+
+def _clamped_content(content: dict, cap: int) -> dict:
+    return {k: (v[:cap] if isinstance(v, str) else v) for k, v in content.items()}
+
+
+@router.post("/canvas/keep")
+async def canvas_keep(project: str, kb: str, body: KeepBody) -> dict:
+    """Persist kept candidates through the memory resolver (the HITL gate)."""
+    ctx, store = resolve_kb_or_404(project, kb)
+    if not body.candidates:
+        raise HTTPException(status_code=400, detail="no candidates to keep")
+
+    cfg = get_config()
+    ccfg = cfg.canvas
+    kept = body.candidates[: ccfg.keep_max_candidates]
+    candidates = [
+        Finding(
+            exploration_id="canvas-keep",
+            project_id=ctx.project_id,
+            category=c.category,
+            title=c.title,
+            content=_clamped_content(c.content, ccfg.keep_max_content_chars),
+            confidence=c.confidence,
+            tags=c.tags,
+            provenance=c.provenance,
+        )
+        for c in kept
+    ]
+
+    outcome = await resolve_and_persist(ctx, store, candidates, cfg)
+    ids = outcome.affected_finding_ids
+    syn_status = await maybe_rebuild_synopsis(ctx.kb_id, org_id=ctx.org_id, store=store)
+    schedule_kg_update(ctx, ids, store=store)
+    return {
+        "finding_ids": ids,
+        "events": [e.model_dump() for e in outcome.events],
+        "synopsis": syn_status,
+    }

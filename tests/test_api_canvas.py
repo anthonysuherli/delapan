@@ -161,3 +161,115 @@ def test_canvas_search_provider_failure_emits_error_and_fails_row(client, kb, mo
         "select status, error from explorations"
     ).fetchall()
     assert rows[0][0] == "failed" and "432 quota" in rows[0][1]
+
+
+@pytest.fixture()
+def keep_env(monkeypatch):
+    """Keep path needs embeddings faked (no real keys) and memory enabled."""
+
+    async def _fake_embed(texts):
+        return [[0.01] * 1536 for _ in texts]
+
+    from delapan.core.memory import persist as persist_mod
+
+    monkeypatch.setattr(persist_mod, "embed_batch", _fake_embed)
+    monkeypatch.setenv("DLP_MEMORY__ENABLED", "true")
+    from delapan.core.config import get_config
+
+    get_config.cache_clear()
+    yield persist_mod
+    get_config.cache_clear()
+
+
+def _keep_payload(titles: list[str]) -> dict:
+    return {
+        "candidates": [
+            {
+                "category": "cat",
+                "title": t,
+                "content": {"k": f"fact about {t}"},
+                "confidence": 0.4,
+                "tags": [],
+                "provenance": [{"url": f"http://src/{t}"}],
+            }
+            for t in titles
+        ]
+    }
+
+
+def test_keep_persists_through_resolver_and_returns_events(client, kb, keep_env, monkeypatch):
+    store, kb_id = kb
+    persist_mod = keep_env
+
+    from delapan.core.memory.models import ResolutionDecision, ResolutionOp
+
+    async def _all_add(store_, kb_, cands, embs, mcfg):
+        return [ResolutionDecision(candidate_index=i, op=ResolutionOp.ADD) for i in range(len(cands))]
+
+    monkeypatch.setattr(persist_mod, "resolve", _all_add)
+
+    r = client.post(f"{BASE}/canvas/keep", json=_keep_payload(["A", "B"]))
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["finding_ids"]) == 2
+    assert [e["op"] for e in data["events"]] == ["ADD", "ADD"]
+    assert all(e["new_finding_id"] for e in data["events"])
+    assert "synopsis" in data
+    assert store.count_findings(kb_id) == 2
+
+
+def test_rekeep_noop_produces_no_duplicates(client, kb, keep_env, monkeypatch):
+    store, kb_id = kb
+    persist_mod = keep_env
+
+    from delapan.core.memory.models import ResolutionDecision, ResolutionOp
+
+    async def _all_add(store_, kb_, cands, embs, mcfg):
+        return [ResolutionDecision(candidate_index=i, op=ResolutionOp.ADD) for i in range(len(cands))]
+
+    monkeypatch.setattr(persist_mod, "resolve", _all_add)
+    first = client.post(f"{BASE}/canvas/keep", json=_keep_payload(["A"])).json()
+    fid = first["finding_ids"][0]
+
+    async def _noop(store_, kb_, cands, embs, mcfg):
+        return [
+            ResolutionDecision(candidate_index=0, op=ResolutionOp.NOOP, target_finding_id=fid)
+        ]
+
+    monkeypatch.setattr(persist_mod, "resolve", _noop)
+    second = client.post(f"{BASE}/canvas/keep", json=_keep_payload(["A"])).json()
+    assert second["finding_ids"] == []
+    assert [e["op"] for e in second["events"]] == ["NOOP"]
+    assert store.count_findings(kb_id) == 1
+
+
+def test_keep_clamps_count_and_content(client, kb, keep_env, monkeypatch):
+    store, kb_id = kb
+    persist_mod = keep_env
+    seen = {}
+
+    from delapan.core.memory.models import ResolutionDecision, ResolutionOp
+
+    async def _spy_resolve(store_, kb_, cands, embs, mcfg):
+        seen["cands"] = cands
+        return [ResolutionDecision(candidate_index=i, op=ResolutionOp.ADD) for i in range(len(cands))]
+
+    monkeypatch.setattr(persist_mod, "resolve", _spy_resolve)
+    monkeypatch.setenv("DLP_CANVAS__KEEP_MAX_CANDIDATES", "2")
+    monkeypatch.setenv("DLP_CANVAS__KEEP_MAX_CONTENT_CHARS", "10")
+    from delapan.core.config import get_config
+
+    get_config.cache_clear()
+
+    payload = _keep_payload(["A", "B", "C"])
+    payload["candidates"][0]["content"] = {"k": "x" * 50}
+    r = client.post(f"{BASE}/canvas/keep", json=payload)
+    assert r.status_code == 200
+    assert len(seen["cands"]) == 2                       # count clamped
+    assert seen["cands"][0].content == {"k": "x" * 10}   # content strings clamped
+    get_config.cache_clear()
+
+
+def test_keep_empty_candidates_is_400(client, kb):
+    r = client.post(f"{BASE}/canvas/keep", json={"candidates": []})
+    assert r.status_code == 400
