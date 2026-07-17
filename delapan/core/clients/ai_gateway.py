@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from functools import lru_cache
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TYPE_CHECKING, AsyncIterator, TypeVar, cast
 
 from openai import AsyncOpenAI, omit
 from pydantic import BaseModel
@@ -67,7 +67,7 @@ async def stream_text_completion(
     messages: list[dict],
     temperature: float = 0.2,
     max_tokens: int | None = None,
-):
+) -> AsyncIterator[str]:
     """Streamed plain-text completion through AI Gateway — yields text deltas.
 
     ``messages`` are ``{"role", "content"}`` turns appended after the system
