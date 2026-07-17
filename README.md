@@ -51,6 +51,7 @@ The local tier stores everything in `~/.delapan/delapan.db` (override with
 | **Gap-fill exploration** — plan → search → crawl → extract → merge | `core/exploration/` |
 | **Write-time resolution** — ADD/UPDATE/NOOP/SUPERSEDE a candidate finding against its KB before persisting; nothing is ever deleted, only retired (bi-temporal `valid_from`/`invalidated_at`/`superseded_by`) | `core/memory/` |
 | **Knowledge graph** — entities + relations over findings | `core/knowledge_graph/` |
+| **Canvas surface** — `/canvas/search` (SSE: ephemeral web candidates + grounded streamed answer) and `/canvas/keep` (resolver-gated persistence returning ADD/UPDATE/NOOP/SUPERSEDE events) | `delapan/api/routes_canvas.py` + `delapan/core/canvas/` |
 | **Pluggable storage** — `Store` protocol; ships SQLite, plus a Supabase/pgvector backend | `store/` |
 | **MCP server** | `mcp/` |
 
@@ -111,9 +112,13 @@ pytest && ruff check .
 - The MCP server — `delapan_resume` / `delapan_search` / `delapan_explore` / `delapan_projects` (whole package imports; all 4 tools register and run).
 - `python -m delapan.api.main` → `/health` plus the `/api/*` surface: projects,
   per-KB graph read/write (nodes/edges CRUD, stats, schema), findings
-  list/get/delete, synopsis, resume, and explore over SSE. CORS allows the
-  control-panel dev origins (`:5173`); `scripts/seed_demo_kb.py` seeds a
+  list/get/delete, synopsis, resume, explore over SSE, and **canvas search/keep** over SSE.
+  CORS allows control-panel dev origins (`:5173`); `scripts/seed_demo_kb.py` seeds a
   credential-free demo KB to point a frontend at.
+- **Canvas phase 1** — `/canvas/search` (streamed candidates + grounded answer) and `/canvas/keep`
+  (resolver-gated persistence) landed; includes two loud-failure fixes: explore now fails the run
+  on provider quota/error (Tavily HTTP 432, etc.), and synopsis rebuild routes via gateway with
+  status reporting (`rebuilt`/`skipped`/`failed`).
 
 **Next:**
 - The capture HTTP route (mirror the remaining MCP-adjacent surface over FastAPI).

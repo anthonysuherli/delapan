@@ -41,10 +41,11 @@ hosted/auth tier, br8n anything.
 
 ## Backend
 
-**Port, don't reinvent.** The canvas package on `origin/dev` (`canvas/answer.py`,
-`canvas/target.py`, `api/canvas.py`, `ExploreTool.persist=False`) is the basis;
-master has diverged (write-path dedup, findings total/cap), so this is a
-re-application with review, not a cherry-pick.
+**Fresh build on master.** The June 2026 canvas package on `origin/dev` was
+the intended port basis, but the remote has no `dev` ref reachable from this repo.
+Phase 1 implemented the same contract fresh on master's substrate, reusing
+`run_exploration` (with `persist=False`) and `resolve_and_persist` for the
+search and keep surfaces respectively.
 
 **Keep → resolver.** `/canvas/keep` calls the mem0-style resolver per candidate.
 Response: `{finding_ids, events: [{op: ADD|UPDATE|NOOP|SUPERSEDE, finding_id,
