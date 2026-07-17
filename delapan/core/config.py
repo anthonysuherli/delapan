@@ -202,7 +202,7 @@ class TiersConfig(BaseModel):
 class SynopsisConfig(BaseModel):
     """Per-KB synopsis spine: build model + incremental regen triggers."""
 
-    model: str = "claude-haiku-4-5"  # fast model (fills the unused fast_model slot)
+    model: str = "anthropic/claude-haiku-4.5"  # gateway slug; bare slug ⇒ direct Anthropic
     rebuild_delta: int = 15  # findings added since build => regen
     rebuild_max_age_hours: int = 168
     max_entries: int = 6

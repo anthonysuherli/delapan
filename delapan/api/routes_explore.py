@@ -5,7 +5,7 @@
         ├─► missing keys ──► data: {"phase": "error", "error": ...}     (immediately)
         └─► run_exploration (asyncio task) ──► queue ──► SSE
                 data: {"phase": "planning|searching|crawling|extracting|merging", "detail": ...}
-                data: {"phase": "completed", "finding_ids": [...], "count": N}   (final)
+                data: {"phase": "completed", "finding_ids": [...], "count": N, "synopsis": S}  (final)
                 data: {"phase": "error", "error": "..."}                         (on failure)
 
 The pipeline + persistence sequence mirrors ``mcp/server.py::delapan_explore``
@@ -90,13 +90,13 @@ async def _run_and_persist(
         store.update_exploration(
             exp_id, status="completed", completed_at=_now_iso(), finding_ids=ids
         )
-        await maybe_rebuild_synopsis(ctx.kb_id, org_id=ctx.org_id, store=store)
+        syn_status = await maybe_rebuild_synopsis(ctx.kb_id, org_id=ctx.org_id, store=store)
         schedule_kg_update(ctx, ids, store=store)
     except Exception as exc:  # noqa: BLE001 — mark the row failed, then re-raise
         store.update_exploration(exp_id, status="failed", completed_at=_now_iso(), error=str(exc))
         raise
 
-    return {"finding_ids": ids, "count": len(ids)}
+    return {"finding_ids": ids, "count": len(ids), "synopsis": syn_status}
 
 
 async def _events(ctx: TenantContext, store: Store, body: ExploreBody) -> AsyncIterator[str]:

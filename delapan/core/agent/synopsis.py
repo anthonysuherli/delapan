@@ -14,8 +14,9 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from delapan.core.clients.anthropic import chat_model
-from delapan.core.config import SynopsisConfig, get_config
+from delapan.core.clients.ai_gateway import text_completion
+from delapan.core.clients.anthropic import chat_model, text_of
+from delapan.core.config import SynopsisConfig, get_config, get_settings
 from delapan.store import Store, get_store
 
 logger = logging.getLogger(__name__)
@@ -54,10 +55,31 @@ def load_synopsis(store: Store, kb_id: str) -> dict | None:
     return store.load_synopsis(kb_id)
 
 
-async def _build(findings: list[dict], cfg: SynopsisConfig) -> list[dict]:
+_SYNOPSIS_SYSTEM = "You produce compact JSON knowledge-base synopses. Return ONLY JSON."
+
+
+async def _synopsis_text(cfg: SynopsisConfig, prompt: str) -> str:
+    """One completion for the synopsis, routed by model-slug shape: gateway
+    slugs (``provider/model``) go through the AI Gateway; bare slugs use the
+    direct Anthropic client. Missing keys raise with the exact env var to set."""
+    s = get_settings()
+    if "/" in cfg.model:
+        if not s.ai_gateway_api_key:
+            raise RuntimeError(
+                f"synopsis model {cfg.model!r} routes via AI Gateway — set AI_GATEWAY_API_KEY"
+            )
+        return await text_completion(model=cfg.model, system=_SYNOPSIS_SYSTEM, user=prompt)
+    if not s.anthropic_api_key:
+        raise RuntimeError(
+            f"synopsis model {cfg.model!r} is a direct Anthropic slug — set ANTHROPIC_API_KEY"
+        )
     llm = chat_model(cfg.model)
-    resp = await llm.ainvoke([{"role": "user", "content": _build_prompt(findings, cfg)}])
-    text = resp.content if isinstance(resp.content, str) else ""
+    resp = await llm.ainvoke([{"role": "user", "content": prompt}])
+    return resp.content if isinstance(resp.content, str) else text_of(resp.content)
+
+
+async def _build(findings: list[dict], cfg: SynopsisConfig) -> list[dict]:
+    text = await _synopsis_text(cfg, _build_prompt(findings, cfg))
     try:
         data = json.loads(text[text.find("[") : text.rfind("]") + 1])
         # Load-bearing: the dict-filter keeps the [:max_entries] slice safe — a
@@ -70,25 +92,28 @@ async def _build(findings: list[dict], cfg: SynopsisConfig) -> list[dict]:
 
 async def maybe_rebuild_synopsis(
     kb_id: str, *, org_id: str | None = None, store: Store | None = None
-) -> None:
-    """Fire-and-forget: rebuild the synopsis if the KB grew enough. Never raises.
+) -> str:
+    """Rebuild the synopsis if the KB grew enough. Never raises.
 
-    `org_id` is accepted for signature parity with cloud callers but is no longer
-    threaded through persistence (the Store owns org scoping)."""
+    Returns ``"rebuilt"``, ``"skipped"`` (thresholds not met), or
+    ``"failed: <msg>"`` — callers surface the string so a broken rebuild is
+    visible instead of silent. `org_id` is accepted for signature parity."""
     try:
         cfg = get_config().synopsis
         store = store or get_store()
         live_count = store.count_findings(kb_id)
         row = store.load_synopsis(kb_id)
         if not should_rebuild(live_count, row, cfg):
-            return
+            return "skipped"
         listing = store.list_findings(kb_id, limit=200)
         rows = listing.get("findings", []) if isinstance(listing, dict) else []
         findings = [f for f in rows if isinstance(f, dict)]
         content = await _build(findings, cfg)
         store.upsert_synopsis(kb_id, content=content, finding_count=live_count, model=cfg.model)
-    except Exception:  # noqa: BLE001 — regen is best-effort, never breaks a turn
+        return "rebuilt"
+    except Exception as exc:  # noqa: BLE001 — regen is best-effort, never breaks a turn
         logger.exception("synopsis rebuild failed for kb=%s", kb_id)
+        return f"failed: {exc}"
 
 
 _BG_TASKS: set[asyncio.Task] = set()

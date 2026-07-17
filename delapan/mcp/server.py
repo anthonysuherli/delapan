@@ -91,7 +91,8 @@ async def delapan_explore(
     """Run the research pipeline (plan→search→crawl→extract→merge) and persist
     findings to the named KB (creating the project/KB on demand). Blocks until
     complete (may take several minutes; the calling client may time out). Returns
-    ``{"exploration_id", "finding_ids", "count"}``."""
+    ``{"exploration_id", "finding_ids", "count", "synopsis"}`` — ``synopsis`` is the
+    rebuild status (``"rebuilt"``/``"skipped"``/``"failed: <msg>"``)."""
     ctx = resolve_tenant(project, kb, create=True)
     store = get_store(ctx.access_token, org_id=ctx.org_id)
     cfg = get_config().exploration
@@ -117,13 +118,18 @@ async def delapan_explore(
         # Grow the stable layers from the new findings. Synopsis rebuild is awaited
         # (best-effort, never raises); the KG update is fire-and-forget (sync
         # scheduler, gated on an approved intent schema — no-op otherwise).
-        await maybe_rebuild_synopsis(ctx.kb_id, org_id=ctx.org_id, store=store)
+        syn_status = await maybe_rebuild_synopsis(ctx.kb_id, org_id=ctx.org_id, store=store)
         schedule_kg_update(ctx, ids, store=store)
     except Exception as exc:  # noqa: BLE001 — mark the row failed, then re-raise
         store.update_exploration(exp_id, status="failed", completed_at=_now_iso(), error=str(exc))
         raise
 
-    return {"exploration_id": exp_id, "finding_ids": ids, "count": len(ids)}
+    return {
+        "exploration_id": exp_id,
+        "finding_ids": ids,
+        "count": len(ids),
+        "synopsis": syn_status,
+    }
 
 
 # --- Tenancy ---------------------------------------------------------------

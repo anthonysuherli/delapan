@@ -55,7 +55,7 @@ tiers:
 
 # Per-KB synopsis spine (always-on preamble's stable layer).
 synopsis:
-  model: claude-haiku-4-5
+  model: anthropic/claude-haiku-4.5
   rebuild_delta: 15
   rebuild_max_age_hours: 168
   max_entries: 6
