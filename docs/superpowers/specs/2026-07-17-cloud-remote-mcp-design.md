@@ -125,12 +125,13 @@ claude.ai ──HTTPS/streamable-http──▶ delapan/mcp/cloud_server.py  (NEW
 
 | File | Change | Responsibility |
 |---|---|---|
-| `delapan/mcp/cloud_server.py` | new | `streamable-http` entrypoint; imports the four tool functions from `delapan/mcp/server.py`; configures `FastMCP(auth=AuthSettings(...), token_verifier=...)`. |
+| `delapan/mcp/cloud_server.py` | new | `streamable-http` entrypoint; its own `@mcp.tool()`-decorated wrappers that resolve tenancy via `resolve_tenant_for_token`/`resolve_store_for_token`, then call the shared `_impl` functions below. Configures `FastMCP(auth=AuthSettings(...), token_verifier=...)`. |
 | `delapan/mcp/cloud_auth.py` | new | `SupabaseTokenVerifier(TokenVerifier)` — one `verify_token()` method that resolves a bearer token to a Supabase user via `auth.get_user()`. |
-| `delapan/mcp/tenancy.py` | **modify (additive)** | Add `resolve_tenant_for_token(access_token, project, kb, *, create)` and `resolve_store_for_token(access_token)` — same body shape as `resolve_tenant`/`resolve_store`'s cloud branch, but skip `_login()` and take `(user_id, token)` from the caller. Existing functions unchanged. |
-| `scripts/port_actuary_to_cloud.py` | modify | Replace hardcoded `PROJECT_NAME = "actuary"` with a `--project` argument. Rename script if a generic name is clearer (implementation detail, not decided here). |
+| `delapan/mcp/tenancy.py` | **modify (additive)** | Add `resolve_tenant_for_token(user_id, access_token, project, kb, *, create)` and `resolve_store_for_token(user_id, access_token)` — same body shape as `resolve_tenant`/`resolve_store`'s cloud branch, but skip `_login()` and take `(user_id, token)` from the caller. Existing functions unchanged. |
+| `delapan/mcp/server.py` | **modify (behavior-preserving extraction)** | Extract each tool's logic *after* tenancy resolution into a module-level `_resume_impl`/`_search_impl`/`_explore_impl`/`_projects_impl` function. The existing `@mcp.tool()` wrappers keep calling `resolve_tenant`/`resolve_store` exactly as today and then call the extracted function — stdio behavior is byte-for-byte identical. This is what lets `cloud_server.py` reuse the real logic instead of duplicating it. |
+| `scripts/port_actuary_to_cloud.py` | modify + rename → `scripts/port_project_to_cloud.py` | Replace hardcoded `PROJECT_NAME = "actuary"` with a `--project` argument; replace the hardcoded `KBS` list with a query for that project's actual local KB names. |
 | `Dockerfile`, `fly.toml` | new | Build + deploy config for the cloud server. |
-| `delapan/mcp/server.py`, `delapan/api/main.py` | **unchanged** | Local stdio server and loopback API stay exactly as they are. |
+| `delapan/api/main.py` | **unchanged** | Loopback API stays exactly as it is. |
 
 ## 6. Auth flow detail
 
