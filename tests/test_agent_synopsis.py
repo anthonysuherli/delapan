@@ -21,6 +21,7 @@ async def test_build_routes_gateway_slug_through_text_completion(monkeypatch):
 
     async def _fake_text_completion(*, model, system, user, temperature=0.0, max_tokens=None):
         seen["model"] = model
+        seen["user"] = user
         return '[{"topic": "t", "gloss": "g"}]'
 
     monkeypatch.setattr(synopsis_mod, "text_completion", _fake_text_completion)
@@ -31,6 +32,10 @@ async def test_build_routes_gateway_slug_through_text_completion(monkeypatch):
         [{"title": "A", "category": "c"}], SynopsisConfig(model="anthropic/claude-haiku-4.5")
     )
     assert seen["model"] == "anthropic/claude-haiku-4.5"
+    # Assert the rendered prompt reached text_completion with the correct findings data.
+    assert "A" in seen["user"]
+    assert "c" in seen["user"]
+    assert "JSON" in seen["user"]
     assert out == [{"topic": "t", "gloss": "g"}]
     get_settings.cache_clear()
 
