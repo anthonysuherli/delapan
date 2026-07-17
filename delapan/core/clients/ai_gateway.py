@@ -60,6 +60,32 @@ async def text_completion(
     return completion.choices[0].message.content or ""
 
 
+async def stream_text_completion(
+    *,
+    model: str,
+    system: str,
+    messages: list[dict],
+    temperature: float = 0.2,
+    max_tokens: int | None = None,
+):
+    """Streamed plain-text completion through AI Gateway — yields text deltas.
+
+    ``messages`` are ``{"role", "content"}`` turns appended after the system
+    message (a chat thread). Structured output and fallback models don't apply
+    here; a transport/provider failure raises to the caller mid-stream."""
+    stream = await gateway_client().chat.completions.create(
+        model=model,
+        messages=[{"role": "system", "content": system}, *messages],
+        temperature=temperature,
+        max_tokens=max_tokens if max_tokens is not None else omit,
+        stream=True,
+    )
+    async for chunk in stream:
+        delta = chunk.choices[0].delta.content if chunk.choices else None
+        if delta:
+            yield delta
+
+
 async def structured_completion(
     *,
     model: str,
