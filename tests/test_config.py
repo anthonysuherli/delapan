@@ -52,3 +52,21 @@ def test_memory_code_default_stays_dark():
     from delapan.core.config import MemoryConfig
 
     assert MemoryConfig().enabled is False
+
+
+def test_canvas_section_defaults_and_env_override(monkeypatch):
+    from delapan.core.config import get_config
+
+    get_config.cache_clear()
+    cfg = get_config().canvas
+    assert cfg.answer_model == "anthropic/claude-sonnet-4.6"
+    assert cfg.max_candidates == 24
+    assert cfg.keep_max_candidates == 20
+    assert cfg.keep_max_content_chars == 8000
+    assert cfg.max_history_turns == 8
+    assert cfg.answer_max_tokens == 1024
+
+    monkeypatch.setenv("DLP_CANVAS__MAX_CANDIDATES", "5")
+    get_config.cache_clear()
+    assert get_config().canvas.max_candidates == 5
+    get_config.cache_clear()

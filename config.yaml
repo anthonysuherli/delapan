@@ -60,6 +60,15 @@ synopsis:
   rebuild_max_age_hours: 168
   max_entries: 6
 
+# Search-canvas surface — ephemeral search + keep-gated persistence.
+canvas:
+  answer_model: anthropic/claude-sonnet-4.6
+  answer_max_tokens: 1024
+  max_candidates: 24
+  keep_max_candidates: 20
+  keep_max_content_chars: 8000
+  max_history_turns: 8
+
 # Cross-KB user-profile super-entity (the always-on "who is this user" layer).
 # OFF by default — opt-in. When enabled, a stable profile preamble (synopsis of
 # the reserved __user__/profile KB + the user's most-relevant KBs) is injected

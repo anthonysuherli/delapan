@@ -388,6 +388,19 @@ class MemoryConfig(BaseModel):
     reasoning_effort: str | None = None  # gateway/Gemini thinking level
 
 
+class CanvasConfig(BaseModel):
+    """Search-canvas surface: ephemeral web search + keep-gated persistence.
+    The answer model is an AI Gateway slug; caps bound what one request can
+    stream (candidates) and what one keep may write (count + content chars)."""
+
+    answer_model: str = "anthropic/claude-sonnet-4.6"
+    answer_max_tokens: int = 1024
+    max_candidates: int = 24  # candidates surfaced per search
+    keep_max_candidates: int = 20  # write boundary: max kept per /canvas/keep
+    keep_max_content_chars: int = 8000  # per-candidate clamp on content strings
+    max_history_turns: int = 8  # chat-thread messages replayed into synthesis
+
+
 class PromptsConfig(BaseModel):
     """Agent system prompt + per-tool descriptions surfaced to the LLM."""
 
@@ -401,6 +414,7 @@ class AppConfig(BaseModel):
     """Aggregate of all tunable sections."""
 
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    canvas: CanvasConfig = Field(default_factory=CanvasConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     tiers: TiersConfig = Field(default_factory=TiersConfig)
     synopsis: SynopsisConfig = Field(default_factory=SynopsisConfig)
