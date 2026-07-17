@@ -28,3 +28,6 @@ venv/
 *.swp
 .idea/
 .vscode/
+
+# Isolated worktrees for subagent-driven-development
+.worktrees/
