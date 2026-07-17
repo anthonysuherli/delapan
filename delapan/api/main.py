@@ -6,6 +6,8 @@
                                      ...  /api/projects/{p}/kbs/{k}/findings[...] (list/get/delete)
                                      GET  /api/projects/{p}/kbs/{k}/synopsis|resume
                                      POST /api/projects/{p}/kbs/{k}/explore       (SSE)
+                                     POST /api/projects/{p}/kbs/{k}/canvas/search (SSE)
+                                     POST /api/projects/{p}/kbs/{k}/canvas/keep
 
 The local mirror of the MCP surface plus KG read/write routes for the
 knowledge-graph control panel (a browser frontend on :5173 — hence the CORS
@@ -19,6 +21,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from delapan.api.health import router as health_router
+from delapan.api.routes_canvas import router as canvas_router
 from delapan.api.routes_explore import router as explore_router
 from delapan.api.routes_findings import router as findings_router
 from delapan.api.routes_kg import router as kg_router
@@ -40,6 +43,7 @@ app.include_router(projects_router)
 app.include_router(kg_router)
 app.include_router(findings_router)
 app.include_router(explore_router)
+app.include_router(canvas_router)
 
 
 def main() -> None:

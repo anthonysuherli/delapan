@@ -26,10 +26,10 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from delapan.api.deps import resolve_kb_or_404
+from delapan.api.deps import missing_pipeline_keys, resolve_kb_or_404
 from delapan.core.agent.state import TenantContext
 from delapan.core.agent.synopsis import maybe_rebuild_synopsis
-from delapan.core.config import get_config, get_settings
+from delapan.core.config import get_config
 from delapan.core.exploration import run_exploration
 from delapan.core.knowledge_graph.builder import schedule_kg_update
 from delapan.core.memory.persist import resolve_and_persist
@@ -49,17 +49,6 @@ def _now_iso() -> str:
 
 def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
-
-
-def _missing_keys() -> list[str]:
-    """Credentials the pipeline needs end-to-end (search + LLM + embeddings)."""
-    s = get_settings()
-    required = (
-        ("TAVILY_API_KEY", s.tavily_api_key),
-        ("AI_GATEWAY_API_KEY", s.ai_gateway_api_key),
-        ("OPENAI_API_KEY", s.openai_api_key),
-    )
-    return [name for name, value in required if not value]
 
 
 async def _run_and_persist(
@@ -100,7 +89,7 @@ async def _run_and_persist(
 
 
 async def _events(ctx: TenantContext, store: Store, body: ExploreBody) -> AsyncIterator[str]:
-    missing = _missing_keys()
+    missing = missing_pipeline_keys()
     if missing:
         yield _sse({"phase": "error", "error": f"missing required keys: {', '.join(missing)}"})
         return

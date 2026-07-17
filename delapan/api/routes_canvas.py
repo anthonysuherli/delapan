@@ -1,0 +1,153 @@
+"""Canvas routes — ephemeral search + keep-gated persistence.
+
+    POST /api/projects/{p}/kbs/{k}/canvas/search   {"prompt", "history"?, "max_candidates"?}
+        │  SSE: grounding → planning…merging → candidates → answer* → completed|error
+        │  (runs the pipeline with NO persistence — candidates are ephemeral)
+    POST /api/projects/{p}/kbs/{k}/canvas/keep     {"candidates": [...]}
+        │  persists kept candidates through the memory resolver
+        └─► {"finding_ids", "events", "synopsis"}
+
+Search is browse-only; `/keep` is the explicit HITL persistence gate, routed
+through ``resolve_and_persist`` (ADD/UPDATE/NOOP/SUPERSEDE) — its events are
+the frontend's graph-delta + character feed.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from datetime import datetime, timezone
+from typing import AsyncIterator, Literal
+
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+
+from delapan.api.deps import missing_pipeline_keys, resolve_kb_or_404
+from delapan.core.agent.preamble import select_preamble
+from delapan.core.agent.state import TenantContext
+from delapan.core.canvas.answer import stream_answer
+from delapan.core.config import get_config
+from delapan.core.exploration import run_exploration
+from delapan.core.exploration.models import Finding
+from delapan.store import Store
+
+router = APIRouter(prefix="/api/projects/{project}/kbs/{kb}")
+
+
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class CanvasSearchBody(BaseModel):
+    prompt: str
+    history: list[ChatTurn] = Field(default_factory=list)
+    max_candidates: int | None = None
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+_CANDIDATE_FIELDS = {"id", "category", "title", "content", "confidence", "tags", "provenance"}
+
+
+async def _search_events(
+    ctx: TenantContext, store: Store, body: CanvasSearchBody
+) -> AsyncIterator[str]:
+    missing = missing_pipeline_keys()
+    if missing:
+        yield _sse({"phase": "error", "error": f"missing required keys: {', '.join(missing)}"})
+        return
+
+    cfg = get_config()
+    ccfg = cfg.canvas
+    cap = min(body.max_candidates or ccfg.max_candidates, ccfg.max_candidates)
+
+    preamble_xml, coverage = await select_preamble(
+        body.prompt, store=store, kb_id=ctx.kb_id, depth="shallow"
+    )
+    yield _sse({"phase": "grounding", "coverage": coverage})
+
+    queue: asyncio.Queue[dict | None] = asyncio.Queue()
+    result: dict = {}
+
+    async def on_progress(phase: str) -> None:
+        if phase == "completed" or phase.startswith("error"):
+            return
+        await queue.put({"phase": phase, "detail": None})
+
+    async def run() -> None:
+        exp_id = store.create_exploration(ctx.org_id, ctx.kb_id, body.prompt)
+        try:
+            findings = await run_exploration(
+                body.prompt,
+                exploration_id=exp_id,
+                project_id=ctx.project_id,
+                kb_id=ctx.kb_id,
+                cfg=cfg.exploration,
+                on_progress=on_progress,
+            )
+            # Browse-only: record the run, persist nothing.
+            store.update_exploration(
+                exp_id, status="completed", completed_at=_now_iso(), finding_ids=[]
+            )
+            result["exploration_id"] = exp_id
+            result["candidates"] = findings[:cap]
+        except Exception as exc:  # noqa: BLE001 — mark the row failed, surface as SSE error
+            store.update_exploration(
+                exp_id, status="failed", completed_at=_now_iso(), error=str(exc)
+            )
+            result["error"] = str(exc)
+        finally:
+            await queue.put(None)
+
+    task = asyncio.create_task(run())
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield _sse(item)
+
+        if "error" in result:
+            yield _sse({"phase": "error", "error": result["error"]})
+            return
+
+        candidates: list[Finding] = result["candidates"]
+        yield _sse(
+            {
+                "phase": "candidates",
+                "exploration_id": result["exploration_id"],
+                "candidates": [f.model_dump(include=_CANDIDATE_FIELDS) for f in candidates],
+            }
+        )
+
+        try:
+            async for delta in stream_answer(
+                body.prompt,
+                preamble_xml=preamble_xml,
+                candidates=candidates,
+                history=[t.model_dump() for t in body.history],
+                cfg=ccfg,
+            ):
+                yield _sse({"phase": "answer", "delta": delta})
+        except Exception as exc:  # noqa: BLE001 — candidates already delivered; surface and stop
+            yield _sse({"phase": "error", "error": f"answer synthesis failed: {exc}"})
+            return
+
+        yield _sse({"phase": "completed", "candidate_count": len(candidates)})
+    finally:
+        if not task.done():
+            task.cancel()
+
+
+@router.post("/canvas/search")
+async def canvas_search(project: str, kb: str, body: CanvasSearchBody) -> StreamingResponse:
+    ctx, store = resolve_kb_or_404(project, kb)
+    return StreamingResponse(_search_events(ctx, store, body), media_type="text/event-stream")
