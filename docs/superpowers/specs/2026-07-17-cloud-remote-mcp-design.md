@@ -93,55 +93,73 @@ local stdio server.
 
 ## 5. Architecture & files
 
-No engine call sites change. `tenancy.py`'s cloud branch already resolves
-`org_id` from an access token; this build just supplies that access token
-from claude.ai's OAuth flow instead of a password-grant login.
+**Correction (found during planning, 2026-07-17):** the installed `mcp` SDK
+(v1.28.1, already a dependency) implements RFC 9728 protected-resource
+metadata and the `401`/`WWW-Authenticate` handshake natively —
+`FastMCP(auth=AuthSettings(...), token_verifier=...)`. Nothing hand-rolled.
+Also, `tenancy.py`'s `resolve_tenant`/`resolve_store` always call the
+private `_login()` (password grant for the fixed configured MCP user) —
+they do not accept an externally supplied token. Two small additive
+functions are needed so the cloud server can pass through the token
+claude.ai actually presents (which represents whichever real person
+authenticated, not always the fixed MCP user). The **existing** functions
+are untouched — this is an addition, not a modification of call sites that
+already work.
 
 ```
 claude.ai ──HTTPS/streamable-http──▶ delapan/mcp/cloud_server.py  (NEW, Fly.io)
-                                          │
-                                          ├─ GET /.well-known/oauth-protected-resource  (NEW, static)
-                                          ├─ 401 + WWW-Authenticate on missing/expired token  (NEW)
-                                          └─ authenticated request
-                                                 │ access_token (Supabase-issued)
+                                          │ FastMCP(auth=AuthSettings(...), token_verifier=SupabaseTokenVerifier())
+                                          │   → 401/WWW-Authenticate + protected-resource metadata: built into the SDK
+                                          └─ verify_token(bearer) ──▶ cloud_auth.SupabaseTokenVerifier  (NEW)
+                                                 │ user_client(token).auth.get_user(token) → user_id
                                                  ▼
-                                          mcp/tenancy.py  (EXISTS, unchanged)
-                                                 │ _org_for(token) → org_id
+                                          mcp/tenancy.py: resolve_tenant_for_token / resolve_store_for_token  (NEW, additive)
+                                                 │ _org_for(user_id) → org_id   [existing helper, reused]
                                                  ▼
                                           get_store(token, org_id) ──▶ SupabaseStore  (EXISTS)
                                                                             │
                                                                             ▼
                                                           Supabase: Postgres/pgvector (RLS)
-                                                                  + OAuth 2.1 server (auth)
+                                                                  + OAuth 2.1 server (auth, host = SUPABASE_URL)
 ```
 
 | File | Change | Responsibility |
 |---|---|---|
-| `delapan/mcp/cloud_server.py` | new | `streamable-http` entrypoint; imports the four tool functions from `delapan/mcp/server.py`; wires the auth glue below. |
-| `delapan/mcp/cloud_auth.py` | new | Protected-resource metadata document; `401`/`WWW-Authenticate` handshake; extracts the bearer token for `tenancy.py`. |
+| `delapan/mcp/cloud_server.py` | new | `streamable-http` entrypoint; imports the four tool functions from `delapan/mcp/server.py`; configures `FastMCP(auth=AuthSettings(...), token_verifier=...)`. |
+| `delapan/mcp/cloud_auth.py` | new | `SupabaseTokenVerifier(TokenVerifier)` — one `verify_token()` method that resolves a bearer token to a Supabase user via `auth.get_user()`. |
+| `delapan/mcp/tenancy.py` | **modify (additive)** | Add `resolve_tenant_for_token(access_token, project, kb, *, create)` and `resolve_store_for_token(access_token)` — same body shape as `resolve_tenant`/`resolve_store`'s cloud branch, but skip `_login()` and take `(user_id, token)` from the caller. Existing functions unchanged. |
 | `scripts/port_actuary_to_cloud.py` | modify | Replace hardcoded `PROJECT_NAME = "actuary"` with a `--project` argument. Rename script if a generic name is clearer (implementation detail, not decided here). |
 | `Dockerfile`, `fly.toml` | new | Build + deploy config for the cloud server. |
 | `delapan/mcp/server.py`, `delapan/api/main.py` | **unchanged** | Local stdio server and loopback API stay exactly as they are. |
 
 ## 6. Auth flow detail
 
-1. claude.ai sends an unauthenticated MCP request to the cloud server.
-2. The server returns `401` with `WWW-Authenticate: Bearer
-   resource_metadata="https://<cloud-server>/.well-known/oauth-protected-resource"`.
-3. claude.ai fetches that document; it lists Supabase's issuer
-   (`https://d3df020b-….supabase.co/auth/v1`) as the authorization server.
-4. claude.ai discovers Supabase's OAuth metadata, dynamically registers
+1. claude.ai sends an unauthenticated MCP request to the cloud server. The
+   `mcp` SDK's built-in resource-server support returns the spec-correct
+   `401` + `WWW-Authenticate` with a `resource_metadata` pointer — no
+   hand-written endpoint.
+2. claude.ai fetches the protected-resource metadata (also SDK-served); it
+   lists Supabase's issuer (`{SUPABASE_URL}/auth/v1`, e.g.
+   `https://gunqbyddzuwzpncfigro.supabase.co/auth/v1` — the actual project
+   host from `.env`, **not** any internal delapan project UUID) as the
+   authorization server.
+3. claude.ai discovers Supabase's OAuth metadata, dynamically registers
    itself as a client (DCR — no manual per-org credential step), and drives
    the user through Supabase's real consent screen.
-5. Supabase issues an access token (and refresh token) to claude.ai.
-6. Every subsequent MCP request carries that token as a bearer header. The
-   cloud server passes it straight into `tenancy.py`'s existing
-   `get_store(token, org_id=_org_for(token))` — RLS scopes every query to
+4. Supabase issues an access token (and refresh token) to claude.ai.
+5. Every subsequent MCP request carries that token as a bearer header. The
+   SDK calls `SupabaseTokenVerifier.verify_token(token)`, which resolves the
+   Supabase user via `auth.get_user()`. The tool functions then call
+   `resolve_tenant_for_token(token, project, kb)` /
+   `resolve_store_for_token(token)`, which reuse the existing `_org_for()`
+   lookup and `get_store(token, org_id=...)` — RLS scopes every query to
    whatever org(s) that Supabase user belongs to via `org_members`, exactly
    as it already does for the actuary port today.
-7. Token refresh is claude.ai's responsibility (reactive on `401`, proactive
+6. Token refresh is claude.ai's responsibility (reactive on `401`, proactive
    ~5 minutes before expiry per Anthropic's connector spec) as long as the
-   server keeps returning spec-correct `401`s on expired tokens.
+   server keeps returning spec-correct `401`s on expired tokens — handled by
+   the SDK as long as `verify_token` correctly returns `None` on an expired
+   token.
 
 Sharing with another person (e.g. a second Supabase user) requires only an
 `org_members` row for them on whichever org's KBs they should see — no code
@@ -182,10 +200,12 @@ Both dry-run first, then `--execute`, matching the actuary port's precedent.
 
 ## 10. Testing
 
-1. **Unit tests** for `cloud_auth.py`: the protected-resource-metadata
-   document shape, the `401`/`WWW-Authenticate` header format, bearer-token
-   extraction — using the existing `tests/fake_supabase.py` in-memory harness
-   pattern where the auth glue touches the store.
+1. **Unit tests** for `cloud_auth.SupabaseTokenVerifier.verify_token()` (valid
+   token → `AccessToken` with the right `subject`; invalid/expired token →
+   `None`) and for `tenancy.resolve_tenant_for_token`/`resolve_store_for_token`
+   — using the existing `tests/fake_supabase.py` in-memory harness pattern.
+   The `401`/metadata handshake itself is the SDK's own tested behavior, not
+   re-tested here.
 2. **Env-gated live smoke test** (same pattern as `tests/test_supabase_live.py`,
    e.g. `RUN_CLOUD_TESTS=1`): hits the deployed Fly instance end-to-end once
    it's up — a real OAuth token, one call to each of the four tools against
