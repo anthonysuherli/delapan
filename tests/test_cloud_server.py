@@ -33,3 +33,8 @@ async def test_registers_four_tools(monkeypatch):
 def test_auth_points_at_supabase_issuer(monkeypatch):
     cs = _reload_cloud_server(monkeypatch)
     assert str(cs.mcp.settings.auth.issuer_url) == "https://x.supabase.co/auth/v1"
+
+
+def test_stateless_http_for_multi_instance_deploy(monkeypatch):
+    cs = _reload_cloud_server(monkeypatch)
+    assert cs.mcp.settings.stateless_http is True

@@ -43,6 +43,7 @@ mcp = FastMCP(
     "delapan-cloud",
     host="0.0.0.0",
     port=int(os.environ.get("PORT", "8000")),
+    stateless_http=True,
     token_verifier=SupabaseTokenVerifier(),
     auth=AuthSettings(
         issuer_url=f"{_settings.supabase_url}/auth/v1",
