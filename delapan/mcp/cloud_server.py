@@ -62,7 +62,10 @@ def _caller() -> AccessToken:
 async def delapan_resume(
     project: str, kb: str, query: str | None = None, depth: Depth = "normal"
 ) -> dict:
-    """Inject KB context into THIS conversation. Same contract as the local
+    """Inject KB context into THIS conversation. Returns ``{"banner", "preamble",
+    "coverage"}``: the delapan wordmark to lead the message with, the <preamble>
+    (synopsis spine plus query-relevant findings), and the coverage band for the
+    query (``rich``/``sparse``/``gap``). Same contract as the local
     ``delapan_resume`` tool, scoped to the authenticated claude.ai caller's org."""
     caller = _caller()
     try:
@@ -75,7 +78,9 @@ async def delapan_resume(
 @mcp.tool()
 async def delapan_search(project: str, kb: str, query: str, limit: int | None = None) -> dict:
     """Recall from the KB only — semantic search over existing findings, no web.
-    Same contract as the local ``delapan_search`` tool."""
+    Returns ``{"query", "findings"}`` with the ranked finding rows (each carries a
+    ``similarity``). Same contract as the local ``delapan_search`` tool, scoped to
+    the authenticated claude.ai caller's org."""
     caller = _caller()
     try:
         ctx = resolve_tenant_for_token(caller.subject, caller.token, project, kb, create=False)
@@ -88,8 +93,11 @@ async def delapan_search(project: str, kb: str, query: str, limit: int | None = 
 async def delapan_explore(
     project: str, kb: str, prompt: str, max_findings: int | None = None
 ) -> dict:
-    """Run the research pipeline and persist findings to the named KB (creating
-    it on demand). Same contract as the local ``delapan_explore`` tool."""
+    """Run the research pipeline (plan→search→crawl→extract→merge) and persist
+    findings to the named KB (creating it on demand). Blocks until complete (may
+    take several minutes; the calling client may time out). Returns
+    ``{"exploration_id", "finding_ids", "count"}``. Same contract as the local
+    ``delapan_explore`` tool, scoped to the authenticated claude.ai caller's org."""
     caller = _caller()
     ctx = resolve_tenant_for_token(caller.subject, caller.token, project, kb, create=True)
     return await _explore_impl(ctx, prompt, max_findings)
@@ -97,7 +105,8 @@ async def delapan_explore(
 
 @mcp.tool()
 async def delapan_projects() -> dict:
-    """List the authenticated caller's projects/KBs. Same contract as the local
+    """List the authenticated caller's projects (by name) with their KBs — for
+    client discovery. Returns ``{"projects": [...]}``. Same contract as the local
     ``delapan_projects`` tool."""
     caller = _caller()
     store = resolve_store_for_token(caller.subject, caller.token)
