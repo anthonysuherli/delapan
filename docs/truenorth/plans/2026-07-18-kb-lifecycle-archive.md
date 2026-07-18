@@ -430,13 +430,19 @@ returns table (
 language sql
 stable
 security invoker
+set search_path = public
 as $$
   select p.id, p.name, p.archived_at,
          k.id, k.name, k.archived_at,
          coalesce(f.n, 0), f.last
     from projects p
+    -- The archived-KB filter belongs in the JOIN, not the WHERE. In the WHERE it
+    -- would drop the project's last row once all its KBs are archived, making the
+    -- project vanish -- where the SQLite tier keeps it with an empty kbs list.
     left join kbs k
-      on k.project_id = p.id and k.org_id = p.org_id
+      on k.project_id = p.id
+     and k.org_id = p.org_id
+     and (p_include_archived or k.archived_at is null)
     left join lateral (
       select count(*) as n, max(created_at) as last
         from findings
@@ -445,9 +451,7 @@ as $$
     ) f on true
    where p.org_id = p_org_id
      and p.name <> '__journal__'
-     and (p_include_archived
-          or (p.archived_at is null
-              and (k.id is null or k.archived_at is null)))
+     and (p_include_archived or p.archived_at is null)
    order by p.created_at, k.created_at;
 $$;
 ```
@@ -549,10 +553,16 @@ In `delapan/store/supabase.py`, after `list_projects` (ends line 100):
             stamp = current  # idempotent — don't move the timestamp
         else:
             stamp = _now_iso() if archived else None
-            (
+            res = (
                 self._c.table(table).update({"archived_at": stamp})
                 .eq("id", row_id).eq("org_id", self._org_id).execute()
             )
+            # Prefer the value Postgres echoes back. A timestamptz round-trips
+            # through PostgREST in its own format, so returning the Python-side
+            # string here and the DB-side string on the idempotent path below
+            # would make two archives of the same KB disagree.
+            if res.data and archived:
+                stamp = res.data[0].get("archived_at", stamp)
 
         return {
             "project_id": project_id,
@@ -624,8 +634,12 @@ def _register_rpc(fake):
                 continue
             if not inc and p.get("archived_at") is not None:
                 continue
+            # Mirror the SQL: the archived-KB filter is part of the join, so a
+            # project whose KBs are all archived still yields one filler row
+            # rather than disappearing.
             kbs = [k for k in fake.tables.get("kbs", [])
-                   if k["project_id"] == p["id"] and k["org_id"] == org]
+                   if k["project_id"] == p["id"] and k["org_id"] == org
+                   and (inc or k.get("archived_at") is None)]
             if not kbs:
                 out.append({"project_id": p["id"], "project_name": p["name"],
                             "project_archived_at": p.get("archived_at"),
@@ -634,8 +648,6 @@ def _register_rpc(fake):
                             "finding_count": 0, "last_finding_at": None})
                 continue
             for k in kbs:
-                if not inc and k.get("archived_at") is not None:
-                    continue
                 live = [f for f in fake.tables.get("findings", [])
                         if f["kb_id"] == k["id"] and f.get("invalidated_at") is None]
                 out.append({
@@ -671,6 +683,18 @@ def test_archived_kb_hidden_by_default(monkeypatch):
     assert proj["kbs"] == []
     [proj_all] = store.list_projects(include_archived=True)
     assert proj_all["kbs"][0]["archived_at"] is not None
+
+
+def test_project_survives_when_all_kbs_archived(monkeypatch):
+    """Parity with SQLite: the project stays, with an empty kbs list. Putting the
+    archived-KB filter in the RPC's WHERE instead of its JOIN loses the project."""
+    store, fake = make_store(monkeypatch)
+    pid, kid = _seed(store)
+    _register_rpc(fake)
+    store.set_archived(project_id=pid, kb_id=kid, archived=True)
+    [proj] = store.list_projects()
+    assert proj["project_id"] == pid
+    assert proj["kbs"] == []
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
