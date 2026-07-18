@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-off migration: local SQLite `actuary` project (all KBs) → cloud Supabase.
+"""One-off migration: a local SQLite project (all its KBs) → cloud Supabase.
 
     ~/.delapan/delapan.db  ──(read + transform)──►  Supabase REST (PostgREST)
 
@@ -34,15 +34,23 @@ import sqlite_vec
 DB = os.path.expanduser("~/.delapan/delapan.db")
 BASE = "https://gunqbyddzuwzpncfigro.supabase.co/rest/v1"
 ORG = "1a7d0aa5-587f-4420-985b-bafcf03bf04f"
-PROJECT_NAME = "actuary"
-KBS = ["methodologies", "ifrs17-hk", "csuherli", "unified"]
 BATCH = 25
 
 
 def dash(h: str) -> str:
-    """32-char hex → canonical 8-4-4-4-12 UUID. Pass through anything else."""
+    """32-char hex → canonical 8-4-4-4-12 UUID. Already-dashed UUIDs pass through
+    unchanged. Anything else (e.g. a human-authored slug id like "demo-finding-001")
+    becomes a stable UUID5 derived from the original string, so every reference to
+    the same slug — the finding's own id and any grounded_in pointing at it — maps
+    to the same cloud UUID."""
     h = (h or "").strip()
-    return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}" if len(h) == 32 else h
+    if len(h) == 32:
+        return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+    try:
+        uuidlib.UUID(h)
+        return h
+    except ValueError:
+        return str(uuidlib.uuid5(uuidlib.NAMESPACE_URL, h))
 
 
 def vec_to_str(blob: bytes | None) -> str | None:
@@ -122,25 +130,31 @@ def rollback(project_uuid: str, key: str) -> None:
     print(f"rolled back project {project_uuid} ({len(kb_ids)} kbs)")
 
 
-def build(conn: sqlite3.Connection):
+def build(conn: sqlite3.Connection, project_name: str):
     conn.row_factory = sqlite3.Row
     proj_uuid = str(uuidlib.uuid4())
     local_proj = conn.execute(
-        "SELECT id FROM projects WHERE name=?", (PROJECT_NAME,)
+        "SELECT id, created_at FROM projects WHERE name=?", (project_name,)
     ).fetchone()
     if not local_proj:
-        sys.exit(f"no local project named {PROJECT_NAME!r}")
+        sys.exit(f"no local project named {project_name!r}")
+
+    kb_names = [
+        r["name"]
+        for r in conn.execute(
+            "SELECT name FROM kbs WHERE project_id=? ORDER BY name", (local_proj["id"],)
+        )
+    ]
+    if not kb_names:
+        sys.exit(f"local project {project_name!r} has no KBs")
 
     kb_map: dict[str, str] = {}  # local kb_id -> new cloud uuid
     kb_rows: list[dict] = []
-    for name in KBS:
+    for name in kb_names:
         row = conn.execute(
             "SELECT k.id, k.created_at FROM kbs k WHERE k.project_id=? AND k.name=?",
             (local_proj["id"], name),
         ).fetchone()
-        if not row:
-            print(f"  warn: local kb {name!r} not found, skipping")
-            continue
         new_id = str(uuidlib.uuid4())
         kb_map[row["id"]] = new_id
         kb_rows.append({
@@ -152,10 +166,8 @@ def build(conn: sqlite3.Connection):
     # default_kb_id FKs into kbs, which FK back into projects — circular, so the
     # project goes in with a null default and is patched after the kbs exist.
     project_row = {
-        "id": proj_uuid, "org_id": ORG, "name": PROJECT_NAME, "default_kb_id": None,
-        "created_at": conn.execute(
-            "SELECT created_at FROM projects WHERE id=?", (local_proj["id"],)
-        ).fetchone()["created_at"],
+        "id": proj_uuid, "org_id": ORG, "name": project_name, "default_kb_id": None,
+        "created_at": local_proj["created_at"],
     }
 
     findings, nodes, edges = [], [], []
@@ -199,6 +211,7 @@ def build(conn: sqlite3.Connection):
 
 def main() -> None:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--project", help="local project name to port")
     ap.add_argument("--execute", action="store_true", help="write (default: dry-run)")
     ap.add_argument("--rollback", metavar="PROJECT_UUID", help="delete a ported project")
     args = ap.parse_args()
@@ -207,14 +220,16 @@ def main() -> None:
     if args.rollback:
         rollback(args.rollback, key)
         return
+    if not args.project:
+        sys.exit("--project is required (unless using --rollback)")
 
     conn = sqlite3.connect(DB)
     conn.enable_load_extension(True)
     sqlite_vec.load(conn)
-    project_row, kb_rows, findings, nodes, edges = build(conn)
+    project_row, kb_rows, findings, nodes, edges = build(conn, args.project)
 
     mode = "EXECUTE" if args.execute else "DRY-RUN"
-    print(f"=== {mode}: actuary → cloud ===")
+    print(f"=== {mode}: {args.project} → cloud ===")
     print(f"project {project_row['id']}  org {ORG}")
     for kb in kb_rows:
         nf = sum(1 for f in findings if f["kb_id"] == kb["id"])
