@@ -89,6 +89,14 @@ def test_archive_project_level(store):
 def test_archive_unknown_raises(store):
     with pytest.raises(RuntimeError):
         store.set_archived(project_id="nope", archived=True)
+
+
+def test_archive_mismatched_pair_raises(store):
+    """A kb_id that doesn't belong to project_id must raise, not silently pass."""
+    pid, kid = _seed(store)
+    _, other_pid = store.resolve_project("repoB", create=True)
+    with pytest.raises(RuntimeError):
+        store.set_archived(project_id=other_pid, kb_id=kid, archived=True)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -136,11 +144,22 @@ In `delapan/store/sqlite.py`, after `list_projects` (ends line 666):
         self, *, project_id: str, kb_id: str | None = None, archived: bool
     ) -> dict:
         """Stamp/clear ``archived_at`` on a KB (or the project when kb_id is None)."""
-        table, row_id = ("kbs", kb_id) if kb_id else ("projects", project_id)
-        row = self._conn.execute(
-            f"SELECT archived_at FROM {table} WHERE id = ? AND org_id = ?;",
-            (row_id, _ORG),
-        ).fetchone()
+        # The KB lookup is scoped by project_id too: a (project, kb) pair that
+        # doesn't belong together must raise, not silently archive the KB and
+        # echo back an unrelated project_id.
+        if kb_id:
+            table, row_id = "kbs", kb_id
+            row = self._conn.execute(
+                "SELECT archived_at FROM kbs "
+                "WHERE id = ? AND org_id = ? AND project_id = ?;",
+                (kb_id, _ORG, project_id),
+            ).fetchone()
+        else:
+            table, row_id = "projects", project_id
+            row = self._conn.execute(
+                "SELECT archived_at FROM projects WHERE id = ? AND org_id = ?;",
+                (project_id, _ORG),
+            ).fetchone()
         if row is None:
             raise RuntimeError(f"{table} {row_id!r} not found")
 
@@ -150,7 +169,8 @@ In `delapan/store/sqlite.py`, after `list_projects` (ends line 666):
         else:
             stamp = _now_iso() if archived else None
             self._conn.execute(
-                f"UPDATE {table} SET archived_at = ? WHERE id = ?;", (stamp, row_id)
+                f"UPDATE {table} SET archived_at = ? WHERE id = ? AND org_id = ?;",
+                (stamp, row_id, _ORG),
             )
             self._conn.commit()
 
@@ -181,7 +201,7 @@ In `delapan/store/sqlite.py`, after `list_projects` (ends line 666):
 - [ ] **Step 6: Run tests to verify they pass**
 
 Run: `pytest tests/test_archive_sqlite.py -v`
-Expected: 5 passed
+Expected: 6 passed
 
 - [ ] **Step 7: Verify no regression**
 
@@ -275,7 +295,7 @@ def test_project_archive_does_not_stamp_its_kbs(store):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_archive_sqlite.py -v`
-Expected: the five Task 1 tests still pass; the five new ones FAIL with `KeyError: 'finding_count'` and `TypeError: list_projects() got an unexpected keyword argument 'include_archived'`
+Expected: the six Task 1 tests still pass; the five new ones FAIL with `KeyError: 'finding_count'` and `TypeError: list_projects() got an unexpected keyword argument 'include_archived'`
 
 - [ ] **Step 3: Update the protocol signature**
 
@@ -354,7 +374,7 @@ Replace `list_projects` in `delapan/store/sqlite.py` (lines 638-666) entirely:
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `pytest tests/test_archive_sqlite.py -v`
-Expected: 10 passed
+Expected: 11 passed
 
 - [ ] **Step 6: Fix the fallout**
 
@@ -486,6 +506,15 @@ def test_archive_unknown_raises(monkeypatch):
     store, _ = make_store(monkeypatch)
     with pytest.raises(RuntimeError):
         store.set_archived(project_id="nope", archived=True)
+
+
+def test_archive_mismatched_pair_raises(monkeypatch):
+    """Same contract as the SQLite tier — the pair must belong together."""
+    store, _ = make_store(monkeypatch)
+    pid, kid = _seed(store)
+    _, other_pid = store.resolve_project("repoB", create=True)
+    with pytest.raises(RuntimeError):
+        store.set_archived(project_id=other_pid, kb_id=kid, archived=True)
 ```
 
 - [ ] **Step 3: Run test to verify it fails**
@@ -502,12 +531,16 @@ In `delapan/store/supabase.py`, after `list_projects` (ends line 100):
         self, *, project_id: str, kb_id: str | None = None, archived: bool
     ) -> dict:
         """Stamp/clear ``archived_at`` on a KB (or the project when kb_id is None)."""
+        # The KB lookup is scoped by project_id too — same contract as the SQLite
+        # tier: a (project, kb) pair that doesn't belong together must raise.
         table, row_id = ("kbs", kb_id) if kb_id else ("projects", project_id)
-        cur = (
+        q = (
             self._c.table(table).select("archived_at")
             .eq("id", row_id).eq("org_id", self._org_id)
-            .limit(1).execute().data
         )
+        if kb_id:
+            q = q.eq("project_id", project_id)
+        cur = q.limit(1).execute().data
         if not cur:
             raise RuntimeError(f"{table} {row_id!r} not found")
 
@@ -554,7 +587,7 @@ In `delapan/store/supabase.py`, after `list_projects` (ends line 100):
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `pytest tests/test_archive_supabase.py -v`
-Expected: 4 passed
+Expected: 5 passed
 
 - [ ] **Step 6: Commit**
 
@@ -953,7 +986,7 @@ def archive_kb(project: str, kb: str, body: ArchiveRequest) -> dict:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/test_archive_routes.py -v`
-Expected: 4 passed
+Expected: 5 passed
 
 - [ ] **Step 5: Commit**
 
@@ -1157,7 +1190,7 @@ In `delapan/mcp/server.py`, replace "four tools" (line 7) with "five tools" and 
 - [ ] **Step 7: Run tests to verify they pass**
 
 Run: `pytest tests/test_archive_mcp.py -v`
-Expected: 5 passed
+Expected: 6 passed
 
 - [ ] **Step 8: Full suite**
 
