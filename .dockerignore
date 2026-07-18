@@ -1,0 +1,9 @@
+.venv/
+.git/
+.worktrees/
+__pycache__/
+*.pyc
+tests/
+scripts/
+docs/
+.env
