@@ -132,3 +132,38 @@ def test_archive_returns_db_echoed_timestamp(monkeypatch):
     assert first["archived_at"] == stored   # and that is what we returned
     second = store.set_archived(project_id=pid, kb_id=kid, archived=True)
     assert second["archived_at"] == stored
+
+
+def test_list_projects_new_shape(monkeypatch):
+    store, fake = make_store(monkeypatch)
+    pid, kid = _seed(store)
+    _register_rpc(fake)
+    out = store.list_projects()
+    assert out == [{
+        "project": "repoA", "project_id": pid, "archived_at": None,
+        "kbs": [{"kb": "main", "kb_id": kid, "finding_count": 0,
+                 "last_finding_at": None, "archived_at": None}],
+    }]
+
+
+def test_archived_kb_hidden_by_default(monkeypatch):
+    store, fake = make_store(monkeypatch)
+    pid, kid = _seed(store)
+    _register_rpc(fake)
+    store.set_archived(project_id=pid, kb_id=kid, archived=True)
+    [proj] = store.list_projects()
+    assert proj["kbs"] == []
+    [proj_all] = store.list_projects(include_archived=True)
+    assert proj_all["kbs"][0]["archived_at"] is not None
+
+
+def test_project_survives_when_all_kbs_archived(monkeypatch):
+    """Parity with SQLite: the project stays, with an empty kbs list. Putting the
+    archived-KB filter in the RPC's WHERE instead of its JOIN loses the project."""
+    store, fake = make_store(monkeypatch)
+    pid, kid = _seed(store)
+    _register_rpc(fake)
+    store.set_archived(project_id=pid, kb_id=kid, archived=True)
+    [proj] = store.list_projects()
+    assert proj["project_id"] == pid
+    assert proj["kbs"] == []

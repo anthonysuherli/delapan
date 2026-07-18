@@ -37,7 +37,13 @@ def test_list_projects_shape(monkeypatch):
     store, fake = make_store(monkeypatch)
     _, pid = store.resolve_project("repoA", create=True)
     kid = store.resolve_kb("org1", pid, "main", create=True)
-    out = store.list_projects()
-    assert out == [{"project": "repoA", "project_id": pid,
-                    "kbs": [{"kb": "main", "kb_id": kid,
-                             "snapshot_count": 0, "last_activity": None}]}]
+    fake.register_rpc("list_projects_with_activity", lambda _p: [{
+        "project_id": pid, "project_name": "repoA", "project_archived_at": None,
+        "kb_id": kid, "kb_name": "main", "kb_archived_at": None,
+        "finding_count": 0, "last_finding_at": None,
+    }])
+    assert store.list_projects() == [{
+        "project": "repoA", "project_id": pid, "archived_at": None,
+        "kbs": [{"kb": "main", "kb_id": kid, "finding_count": 0,
+                 "last_finding_at": None, "archived_at": None}],
+    }]
