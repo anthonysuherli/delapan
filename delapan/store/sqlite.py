@@ -91,10 +91,10 @@ LIST_MAX_LIMIT = 1000
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
-  id TEXT PRIMARY KEY, org_id TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL);
+  id TEXT PRIMARY KEY, org_id TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL, archived_at TEXT);
 CREATE TABLE IF NOT EXISTS kbs (
   id TEXT PRIMARY KEY, org_id TEXT NOT NULL, project_id TEXT NOT NULL, name TEXT NOT NULL,
-  created_at TEXT NOT NULL, init_offered_at TEXT, drift_offered_count INTEGER);
+  created_at TEXT NOT NULL, init_offered_at TEXT, drift_offered_count INTEGER, archived_at TEXT);
 CREATE TABLE IF NOT EXISTS findings (
   id TEXT PRIMARY KEY, org_id TEXT NOT NULL, kb_id TEXT NOT NULL,
   title TEXT, content TEXT, category TEXT, confidence REAL,
@@ -148,6 +148,9 @@ _ADD_COLUMN_MIGRATIONS: list[str] = [
     # (for NOOP) the urls merged plus the confidence delta.
     "ALTER TABLE resolution_events ADD COLUMN new_finding_id TEXT;",
     "ALTER TABLE resolution_events ADD COLUMN details TEXT;",
+    # 0011: reversible KB lifecycle — NULL archived_at = active.
+    "ALTER TABLE projects ADD COLUMN archived_at TEXT;",
+    "ALTER TABLE kbs ADD COLUMN archived_at TEXT;",
 ]
 
 # Cap on how many grounding finding ids a long-lived node (a repo touched for
@@ -664,6 +667,51 @@ class SQLiteStore:
                 )
             projects.append({"project": p["name"], "project_id": p["id"], "kbs": kbs})
         return projects
+
+    def set_archived(
+        self, *, project_id: str, kb_id: str | None = None, archived: bool
+    ) -> dict:
+        """Stamp/clear ``archived_at`` on a KB (or the project when kb_id is None)."""
+        table, row_id = ("kbs", kb_id) if kb_id else ("projects", project_id)
+        row = self._conn.execute(
+            f"SELECT archived_at FROM {table} WHERE id = ? AND org_id = ?;",
+            (row_id, _ORG),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError(f"{table} {row_id!r} not found")
+
+        current = row["archived_at"]
+        if archived and current is not None:
+            stamp = current  # idempotent — don't move the timestamp
+        else:
+            stamp = _now_iso() if archived else None
+            self._conn.execute(
+                f"UPDATE {table} SET archived_at = ? WHERE id = ?;", (stamp, row_id)
+            )
+            self._conn.commit()
+
+        return {
+            "project_id": project_id,
+            "kb_id": kb_id,
+            "archived_at": stamp,
+            "finding_count": self._live_finding_count(project_id, kb_id),
+        }
+
+    def _live_finding_count(self, project_id: str, kb_id: str | None) -> int:
+        """Live (non-invalidated) findings in one KB, or across a project's KBs."""
+        if kb_id:
+            r = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM findings "
+                "WHERE kb_id = ? AND invalidated_at IS NULL;",
+                (kb_id,),
+            ).fetchone()
+        else:
+            r = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM findings WHERE invalidated_at IS NULL "
+                "AND kb_id IN (SELECT id FROM kbs WHERE project_id = ?);",
+                (project_id,),
+            ).fetchone()
+        return int(r["n"])
 
     def _find_or_create(
         self, table: str, match: dict[str, str], insert: dict[str, object], create: bool

@@ -156,6 +156,19 @@ class Store(Protocol):
         its project + branch. Cloud scopes to the authenticated user's org."""
         ...
 
+    def set_archived(
+        self, *, project_id: str, kb_id: str | None = None, archived: bool
+    ) -> dict:
+        """Archive or unarchive a project (``kb_id=None``) or a single KB.
+
+        Returns ``{"project_id", "kb_id", "archived_at", "finding_count"}``.
+        ``finding_count`` counts live findings (``invalidated_at IS NULL``) — for
+        the whole project when ``kb_id`` is None. Idempotent: archiving an
+        already-archived target returns the existing stamp. Raises if the target
+        does not exist — this never creates on demand.
+        """
+        ...
+
     # --- activity knowledge graph --------------------------------------------
     # Nodes/edges live in their own per-KB namespace (`kb_id` = the reserved
     # activity KB). Dedupe is by exact ``(type, normalized label)`` so a repo or
