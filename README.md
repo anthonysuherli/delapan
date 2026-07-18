@@ -126,7 +126,7 @@ pytest && ruff check .
 - The `Store` seam — `get_store()` → `SQLiteStore`; tenancy, project listing, findings, synopsis, KG.
 - The engine core — `agent` (preamble/synopsis/resume), `exploration`, `memory` (resolver + persist), `knowledge_graph` models.
 - The tenancy gateway — `resolve_tenant()` resolves a local tenant through the store.
-- The MCP server — `delapan_resume` / `delapan_search` / `delapan_explore` / `delapan_projects` (whole package imports; all 4 tools register and run).
+- The MCP server — `delapan_resume` / `delapan_search` / `delapan_explore` / `delapan_projects` / `delapan_archive` (whole package imports; all 5 tools register and run).
 - `python -m delapan.api.main` → `/health` plus the `/api/*` surface: projects,
   per-KB graph read/write (nodes/edges CRUD, stats, schema), findings
   list/get/delete, synopsis, resume, and explore over SSE. CORS allows the
