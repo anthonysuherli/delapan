@@ -22,13 +22,19 @@ returns table (
 language sql
 stable
 security invoker
+set search_path = public
 as $$
   select p.id, p.name, p.archived_at,
          k.id, k.name, k.archived_at,
          coalesce(f.n, 0), f.last
     from projects p
+    -- The archived-KB filter belongs in the JOIN, not the WHERE. In the WHERE it
+    -- would drop the project's last row once all its KBs are archived, making the
+    -- project vanish -- where the SQLite tier keeps it with an empty kbs list.
     left join kbs k
-      on k.project_id = p.id and k.org_id = p.org_id
+      on k.project_id = p.id
+     and k.org_id = p.org_id
+     and (p_include_archived or k.archived_at is null)
     left join lateral (
       select count(*) as n, max(created_at) as last
         from findings
@@ -37,8 +43,6 @@ as $$
     ) f on true
    where p.org_id = p_org_id
      and p.name <> '__journal__'
-     and (p_include_archived
-          or (p.archived_at is null
-              and (k.id is null or k.archived_at is null)))
+     and (p_include_archived or p.archived_at is null)
    order by p.created_at, k.created_at;
 $$;

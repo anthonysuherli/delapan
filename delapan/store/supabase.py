@@ -121,10 +121,16 @@ class SupabaseStore:
             stamp = current  # idempotent — don't move the timestamp
         else:
             stamp = _now_iso() if archived else None
-            (
+            res = (
                 self._c.table(table).update({"archived_at": stamp})
                 .eq("id", row_id).eq("org_id", self._org_id).execute()
             )
+            # Prefer the value Postgres echoes back. A timestamptz round-trips
+            # through PostgREST in its own format, so returning the Python-side
+            # string here and the DB-side string on the idempotent path below
+            # would make two archives of the same KB disagree.
+            if res.data and archived:
+                stamp = res.data[0].get("archived_at", stamp)
 
         return {
             "project_id": project_id,
