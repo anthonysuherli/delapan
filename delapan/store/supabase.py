@@ -99,6 +99,62 @@ class SupabaseStore:
             out.append({"project": p["name"], "project_id": p["id"], "kbs": kbs})
         return out
 
+    def set_archived(
+        self, *, project_id: str, kb_id: str | None = None, archived: bool
+    ) -> dict:
+        """Stamp/clear ``archived_at`` on a KB (or the project when kb_id is None)."""
+        # The KB lookup is scoped by project_id too — same contract as the SQLite
+        # tier: a (project, kb) pair that doesn't belong together must raise.
+        table, row_id = ("kbs", kb_id) if kb_id else ("projects", project_id)
+        q = (
+            self._c.table(table).select("archived_at")
+            .eq("id", row_id).eq("org_id", self._org_id)
+        )
+        if kb_id:
+            q = q.eq("project_id", project_id)
+        cur = q.limit(1).execute().data
+        if not cur:
+            raise RuntimeError(f"{table} {row_id!r} not found")
+
+        current = cur[0].get("archived_at")
+        if archived and current is not None:
+            stamp = current  # idempotent — don't move the timestamp
+        else:
+            stamp = _now_iso() if archived else None
+            (
+                self._c.table(table).update({"archived_at": stamp})
+                .eq("id", row_id).eq("org_id", self._org_id).execute()
+            )
+
+        return {
+            "project_id": project_id,
+            "kb_id": kb_id,
+            "archived_at": stamp,
+            "finding_count": self._live_finding_count(project_id, kb_id),
+        }
+
+    def _live_finding_count(self, project_id: str, kb_id: str | None) -> int:
+        """Live (non-invalidated) findings in one KB, or across a project's KBs."""
+        if kb_id:
+            kb_ids = [kb_id]
+        else:
+            kb_ids = [
+                r["id"]
+                for r in (
+                    self._c.table("kbs").select("id")
+                    .eq("org_id", self._org_id).eq("project_id", project_id)
+                    .execute().data
+                )
+            ]
+        if not kb_ids:
+            return 0
+        res = (
+            self._c.table("findings").select("id", count="exact")
+            .in_("kb_id", kb_ids).is_("invalidated_at", "null")
+            .limit(1).execute()
+        )
+        return res.count or 0
+
     # --- findings ------------------------------------------------------------
 
     async def match_findings(self, kb_id, query_embedding, match_count,
