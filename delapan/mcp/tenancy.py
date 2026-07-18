@@ -124,3 +124,33 @@ def resolve_store():
         return get_store()
     user_id, token = _login()
     return get_store(token, org_id=_org_for(user_id))
+
+
+def resolve_tenant_for_token(
+    user_id: str, access_token: str, project: str, kb: str, *, create: bool = True
+) -> TenantContext:
+    """Cloud-only: resolve tenancy for an externally supplied (user_id, access_token)
+    pair — e.g. claude.ai's OAuth token — skipping ``_login()``'s password grant.
+    The token-aware sibling of ``resolve_tenant``'s cloud branch."""
+    from delapan.store import get_store
+
+    org_id = _org_for(user_id)
+    store = get_store(access_token, org_id=org_id)
+    org_id, project_id = store.resolve_project(project, create=create)
+    kb_id = store.resolve_kb(org_id, project_id, kb, create=create)
+    return TenantContext(
+        user_id=user_id,
+        org_id=org_id,
+        project_id=project_id,
+        kb_id=kb_id,
+        thread_id=str(uuid.uuid4()),
+        access_token=access_token,
+    )
+
+
+def resolve_store_for_token(user_id: str, access_token: str):
+    """Cloud-only: org-scoped Store for an externally supplied token — the
+    token-aware sibling of ``resolve_store``."""
+    from delapan.store import get_store
+
+    return get_store(access_token, org_id=_org_for(user_id))
