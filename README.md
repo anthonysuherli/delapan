@@ -58,9 +58,17 @@ The local tier stores everything in `~/.delapan/delapan.db` (override with
 
 Solo initiative status and prioritized backlog live in [`docs/tracking/`](docs/tracking/)
 (markdown source of truth). See the [design spec](docs/superpowers/specs/2026-07-17-solo-project-tracker-design.md).
-After editing, sync to Supabase for the private `/tracking` dashboard:
+
+**Automatic sync**
+- Local: `.git/hooks/post-commit` (installed from `.githooks/post-commit`) runs
+  `scripts/tracking_sync.py` after commits that touch `docs/tracking/`.
+- CI: GitHub Action `tracking-sync` mirrors on push (needs secrets
+  `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`).
+
+Manual:
 
 ```bash
+uv run python scripts/tracking_sync.py --dry-run
 uv run python scripts/tracking_sync.py
 ```
 

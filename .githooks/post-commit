@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Auto-sync docs/tracking → Supabase after commits that touch tracking source.
+# Enable once: git config core.hooksPath .githooks
+
+set -euo pipefail
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  exit 0
+fi
+
+changed="$(git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null || true)"
+if ! printf '%s\n' "$changed" | grep -qE '^(docs/tracking/|scripts/tracking_sync\.py|delapan/tracking/)'; then
+  exit 0
+fi
+
+if [[ ! -f .env ]]; then
+  echo "tracking-sync hook: skip (no .env)" >&2
+  exit 0
+fi
+
+echo "tracking-sync hook: mirroring docs/tracking → Supabase…"
+if uv run python scripts/tracking_sync.py; then
+  echo "tracking-sync hook: ok"
+else
+  echo "tracking-sync hook: FAILED (markdown commit kept; fix and re-run sync)" >&2
+  exit 0  # never block the commit after the fact
+fi
