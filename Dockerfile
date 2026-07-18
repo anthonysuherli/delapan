@@ -3,6 +3,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY pyproject.toml ./
+COPY config.yaml ./
 COPY delapan ./delapan
 
 RUN pip install --no-cache-dir -e ".[cloud,local]"
