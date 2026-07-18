@@ -519,6 +519,44 @@ def test_archive_mismatched_pair_raises(monkeypatch):
     _, other_pid = store.resolve_project("repoB", create=True)
     with pytest.raises(RuntimeError):
         store.set_archived(project_id=other_pid, kb_id=kid, archived=True)
+
+
+def test_archive_returns_db_echoed_timestamp(monkeypatch):
+    """The stamp returned on write must be the one the DB echoed back — Postgres
+    reformats a timestamptz on round-trip, so returning the Python-side string
+    would disagree with the idempotent path, which rereads from the DB.
+
+    FakeSupabase stores payloads verbatim and never reformats, so without the
+    patch below this test passes with or without the fix it is guarding.
+    """
+    store, fake = make_store(monkeypatch)
+    pid, kid = _seed(store)
+
+    real_table = fake.table
+
+    def _reformatting_table(name):
+        t = real_table(name)
+        if name != "kbs":
+            return t
+        real_update = t.update
+
+        def _update(payload):
+            if payload.get("archived_at"):
+                payload = {**payload,
+                           "archived_at": payload["archived_at"].replace("+00:00", "Z")}
+            return real_update(payload)
+
+        t.update = _update
+        return t
+
+    monkeypatch.setattr(fake, "table", _reformatting_table)
+
+    first = store.set_archived(project_id=pid, kb_id=kid, archived=True)
+    stored = next(k for k in fake.tables["kbs"] if k["id"] == kid)["archived_at"]
+    assert stored.endswith("Z")             # the DB stored its own format
+    assert first["archived_at"] == stored   # and that is what we returned
+    second = store.set_archived(project_id=pid, kb_id=kid, archived=True)
+    assert second["archived_at"] == stored
 ```
 
 - [ ] **Step 3: Run test to verify it fails**
@@ -835,6 +873,16 @@ def _shape(store, pid, kid):
     shown = store.list_projects(include_archived=True)
     restored = store.set_archived(project_id=pid, kb_id=kid, archived=False)
     after = store.list_projects()
+
+    # Project-level round-trip. Supabase delegates all archived-filtering to the
+    # RPC's SQL while SQLite filters in Python, so this is the case most likely
+    # to diverge -- and neither tier covers it in its own suite.
+    store.set_archived(project_id=pid, archived=True)
+    p_hidden = store.list_projects()
+    p_shown = store.list_projects(include_archived=True)
+    p_restored = store.set_archived(project_id=pid, archived=False)
+    p_after = store.list_projects()
+
     return {
         "archive_keys": sorted(archived),
         "archived_stamped": archived["archived_at"] is not None,
@@ -844,6 +892,16 @@ def _shape(store, pid, kid):
         "after_kbs": [k["kb"] for p in after for k in p["kbs"]],
         "project_keys": sorted(after[0]),
         "kb_keys": sorted(after[0]["kbs"][0]),
+        # Project-level observations.
+        "proj_archive_keys": sorted(p_restored),
+        "proj_hidden": [p["project"] for p in p_hidden],
+        "proj_shown": [p["project"] for p in p_shown],
+        "proj_after": [p["project"] for p in p_after],
+        # Cascade by read: the project's flag hides its KBs without stamping
+        # them, which is what makes unarchive lossless.
+        "kb_stamped_by_project_archive": [
+            k["archived_at"] for p in p_shown for k in p["kbs"]
+        ],
     }
 
 
@@ -866,6 +924,15 @@ def test_lifecycle_contract_is_correct(sqlite_store):
     assert got["hidden_kbs"] == []
     assert got["shown_kbs"] == ["main"]
     assert got["after_kbs"] == ["main"]
+    # An archived project drops out entirely, and comes back on unarchive.
+    assert got["proj_hidden"] == []
+    assert got["proj_shown"] == ["repoA"]
+    assert got["proj_after"] == ["repoA"]
+    assert got["proj_archive_keys"] == [
+        "archived_at", "finding_count", "kb_id", "project_id"
+    ]
+    # ...and its KB rows were never stamped, so unarchive is lossless.
+    assert got["kb_stamped_by_project_archive"] == [None]
 ```
 
 - [ ] **Step 2: Run it**
