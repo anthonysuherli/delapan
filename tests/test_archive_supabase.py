@@ -97,12 +97,38 @@ def test_archive_mismatched_pair_raises(monkeypatch):
 
 
 def test_archive_returns_db_echoed_timestamp(monkeypatch):
-    """The stamp returned on write must be the one the DB echoes back, so the
-    idempotent path (which rereads it) cannot disagree with the write path."""
+    """The stamp returned on write must be the one the DB echoed back — Postgres
+    reformats a timestamptz on round-trip, so returning the Python-side string
+    would disagree with the idempotent path, which rereads from the DB.
+
+    FakeSupabase stores payloads verbatim and never reformats, so without the
+    patch below this test passes with or without the fix it is guarding.
+    """
     store, fake = make_store(monkeypatch)
     pid, kid = _seed(store)
+
+    real_table = fake.table
+
+    def _reformatting_table(name):
+        t = real_table(name)
+        if name != "kbs":
+            return t
+        real_update = t.update
+
+        def _update(payload):
+            if payload.get("archived_at"):
+                payload = {**payload,
+                           "archived_at": payload["archived_at"].replace("+00:00", "Z")}
+            return real_update(payload)
+
+        t.update = _update
+        return t
+
+    monkeypatch.setattr(fake, "table", _reformatting_table)
+
     first = store.set_archived(project_id=pid, kb_id=kid, archived=True)
     stored = next(k for k in fake.tables["kbs"] if k["id"] == kid)["archived_at"]
-    assert first["archived_at"] == stored
+    assert stored.endswith("Z")             # the DB stored its own format
+    assert first["archived_at"] == stored   # and that is what we returned
     second = store.set_archived(project_id=pid, kb_id=kid, archived=True)
     assert second["archived_at"] == stored
