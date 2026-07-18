@@ -54,6 +54,16 @@ The local tier stores everything in `~/.delapan/delapan.db` (override with
 | **Pluggable storage** — `Store` protocol; ships SQLite, plus a Supabase/pgvector backend | `store/` |
 | **MCP server** | `mcp/` |
 
+## Project tracking
+
+Solo initiative status and prioritized backlog live in [`docs/tracking/`](docs/tracking/)
+(markdown source of truth). See the [design spec](docs/superpowers/specs/2026-07-17-solo-project-tracker-design.md).
+After editing, sync to Supabase for the private `/tracking` dashboard:
+
+```bash
+uv run python scripts/tracking_sync.py
+```
+
 Findings, KBs, and projects are not separate submodules — that persistence lives
 inside the `Store` implementations themselves (`store/sqlite.py`, `store/supabase.py`),
 behind the one `Store` protocol below.
