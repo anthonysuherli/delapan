@@ -1,4 +1,7 @@
-"""Hard validation for tracking rows — never skip; collect all errors then raise."""
+"""Hard validation for tracking rows — never skip; collect all errors then raise.
+
+    InitiativeRow[] + BacklogItem[] ──► validate_tracking ──► ok | TrackingValidationError
+"""
 
 from __future__ import annotations
 
@@ -17,7 +20,27 @@ class TrackingValidationError(ValueError):
 
 
 def _is_url(value: str) -> bool:
-    return value.startswith("https://") or value.startswith("http://")
+    return value.startswith("https://")
+
+
+def _check_local_path(
+    slug: str,
+    field: str,
+    value: str,
+    repo_root: Path,
+    errors: list[str],
+) -> None:
+    root = repo_root.resolve()
+    path = Path(value)
+    if path.is_absolute():
+        errors.append(f"{slug}: {field} path must be relative: {value}")
+        return
+    resolved = (root / value).resolve()
+    if not resolved.is_relative_to(root):
+        errors.append(f"{slug}: {field} path outside repo: {value}")
+        return
+    if not resolved.is_file():
+        errors.append(f"{slug}: {field} path missing: {value}")
 
 
 def validate_tracking(
@@ -49,8 +72,7 @@ def validate_tracking(
                 continue
             if _is_url(value):
                 continue
-            if not (repo_root / value).is_file():
-                errors.append(f"{i.slug}: {field} path missing: {value}")
+            _check_local_path(i.slug, field, value, repo_root, errors)
 
     for item in backlog:
         if item.repo not in REPOS:

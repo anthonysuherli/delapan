@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from delapan.tracking.models import BacklogItem, InitiativeRow
+from delapan.tracking.models import InitiativeRow
 from delapan.tracking.validate import TrackingValidationError, validate_tracking
 
 ROOT = Path(__file__).resolve().parents[1]  # backend repo root
 
 
-def _init(**kwargs) -> InitiativeRow:
-    base = dict(
+def _init(**kwargs: Any) -> InitiativeRow:
+    base: dict[str, Any] = dict(
         slug="alpha",
         title="Alpha",
         status="active",
@@ -59,6 +60,37 @@ def test_https_spec_skips_disk_check() -> None:
         [],
         repo_root=ROOT,
     )
+
+
+def test_http_spec_fails() -> None:
+    with pytest.raises(TrackingValidationError) as ei:
+        validate_tracking(
+            [_init(spec="http://example.com/spec.md")],
+            [],
+            repo_root=ROOT,
+        )
+    assert any("spec" in e for e in ei.value.errors)
+
+
+def test_spec_path_escape_via_parent_fails() -> None:
+    with pytest.raises(TrackingValidationError) as ei:
+        validate_tracking(
+            [_init(spec="../README.md")],
+            [],
+            repo_root=ROOT / "docs" / "tracking",
+        )
+    assert any("outside repo" in e for e in ei.value.errors)
+
+
+def test_absolute_spec_outside_repo_fails() -> None:
+    outside = Path("/etc/hosts")
+    with pytest.raises(TrackingValidationError) as ei:
+        validate_tracking(
+            [_init(spec=str(outside))],
+            [],
+            repo_root=ROOT,
+        )
+    assert any("must be relative" in e for e in ei.value.errors)
 
 
 def test_duplicate_slugs_fail() -> None:
