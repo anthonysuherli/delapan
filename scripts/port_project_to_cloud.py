@@ -38,9 +38,19 @@ BATCH = 25
 
 
 def dash(h: str) -> str:
-    """32-char hex → canonical 8-4-4-4-12 UUID. Pass through anything else."""
+    """32-char hex → canonical 8-4-4-4-12 UUID. Already-dashed UUIDs pass through
+    unchanged. Anything else (e.g. a human-authored slug id like "demo-finding-001")
+    becomes a stable UUID5 derived from the original string, so every reference to
+    the same slug — the finding's own id and any grounded_in pointing at it — maps
+    to the same cloud UUID."""
     h = (h or "").strip()
-    return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}" if len(h) == 32 else h
+    if len(h) == 32:
+        return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+    try:
+        uuidlib.UUID(h)
+        return h
+    except ValueError:
+        return str(uuidlib.uuid5(uuidlib.NAMESPACE_URL, h))
 
 
 def vec_to_str(blob: bytes | None) -> str | None:
