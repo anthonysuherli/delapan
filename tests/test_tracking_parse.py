@@ -11,7 +11,7 @@ from delapan.tracking.parse import (
 FIX = Path(__file__).parent / "fixtures" / "tracking"
 
 
-def test_parse_initiative_frontmatter_and_body():
+def test_parse_initiative_frontmatter_and_body() -> None:
     row = parse_initiative_file(FIX / "initiatives" / "alpha.md")
     assert row.slug == "alpha"
     assert row.title == "Alpha"
@@ -26,7 +26,7 @@ def test_parse_initiative_frontmatter_and_body():
     assert "Ship parser" in row.body_md
 
 
-def test_parse_backlog_tags_and_positions():
+def test_parse_backlog_tags_and_positions() -> None:
     items = parse_backlog_file(FIX / "backlog.md")
     assert len(items) == 2
     assert items[0].position == 1
@@ -39,7 +39,7 @@ def test_parse_backlog_tags_and_positions():
     assert items[1].initiative_slug is None
 
 
-def test_load_tracking_dir_collects_all():
+def test_load_tracking_dir_collects_all() -> None:
     inits, backlog = load_tracking_dir(FIX)
     slugs = sorted(i.slug for i in inits)
     assert slugs == ["alpha", "beta"]

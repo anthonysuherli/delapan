@@ -1,4 +1,8 @@
-"""Tracking row shapes — mirror of docs/tracking markdown + Supabase tables."""
+"""Tracking row shapes — dataclasses mirroring docs/tracking markdown.
+
+    InitiativeRow ◄── YAML frontmatter + body (initiatives/*.md)
+    BacklogItem   ◄── ordered list items (backlog.md)
+"""
 
 from __future__ import annotations
 
