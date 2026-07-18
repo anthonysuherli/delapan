@@ -638,35 +638,54 @@ class SQLiteStore:
             create,
         )
 
-    def list_projects(self) -> list[dict]:
-        """All local projects + KBs with snapshot last-activity/count (newest KB rows last)."""
-        projects: list[dict] = []
-        prows = self._conn.execute(
-            "SELECT id, name FROM projects WHERE org_id = ? AND name != ? ORDER BY created_at;",
+    def list_projects(self, *, include_archived: bool = False) -> list[dict]:
+        """Projects + KBs with live-finding activity, in one aggregate query."""
+        rows = self._conn.execute(
+            """
+            SELECT p.id AS pid, p.name AS pname, p.archived_at AS parch,
+                   k.id AS kid, k.name AS kname, k.archived_at AS karch,
+                   COUNT(f.id) AS n, MAX(f.created_at) AS last
+              FROM projects p
+              LEFT JOIN kbs k
+                ON k.project_id = p.id AND k.org_id = p.org_id
+              LEFT JOIN findings f
+                ON f.kb_id = k.id AND f.invalidated_at IS NULL
+             WHERE p.org_id = ? AND p.name != ?
+             GROUP BY p.id, k.id
+             ORDER BY p.created_at, k.created_at;
+            """,
             (_ORG, JOURNAL_SCOPE),
         ).fetchall()
-        for p in prows:
-            kbs: list[dict] = []
-            krows = self._conn.execute(
-                "SELECT id, name FROM kbs WHERE org_id = ? AND project_id = ? ORDER BY created_at;",
-                (_ORG, p["id"]),
-            ).fetchall()
-            for k in krows:
-                agg = self._conn.execute(
-                    "SELECT COUNT(*) AS n, MAX(created_at) AS last FROM findings "
-                    "WHERE kb_id = ? AND category = 'snapshot';",
-                    (k["id"],),
-                ).fetchone()
-                kbs.append(
-                    {
-                        "kb": k["name"],
-                        "kb_id": k["id"],
-                        "snapshot_count": int(agg["n"]),
-                        "last_activity": agg["last"],
-                    }
-                )
-            projects.append({"project": p["name"], "project_id": p["id"], "kbs": kbs})
-        return projects
+
+        out: list[dict] = []
+        by_pid: dict[str, dict] = {}
+        for r in rows:
+            if not include_archived and r["parch"] is not None:
+                continue
+            proj = by_pid.get(r["pid"])
+            if proj is None:
+                proj = {
+                    "project": r["pname"],
+                    "project_id": r["pid"],
+                    "archived_at": r["parch"],
+                    "kbs": [],
+                }
+                by_pid[r["pid"]] = proj
+                out.append(proj)
+            if r["kid"] is None:
+                continue  # project with no KBs — LEFT JOIN filler row
+            if not include_archived and r["karch"] is not None:
+                continue
+            proj["kbs"].append(
+                {
+                    "kb": r["kname"],
+                    "kb_id": r["kid"],
+                    "finding_count": int(r["n"]),
+                    "last_finding_at": r["last"],
+                    "archived_at": r["karch"],
+                }
+            )
+        return out
 
     def set_archived(
         self, *, project_id: str, kb_id: str | None = None, archived: bool

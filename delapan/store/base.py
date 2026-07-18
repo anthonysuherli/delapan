@@ -146,14 +146,17 @@ class Store(Protocol):
         """Resolve the named KB within (org_id, project_id) → kb_id."""
         ...
 
-    def list_projects(self) -> list[dict]:
+    def list_projects(self, *, include_archived: bool = False) -> list[dict]:
         """All of the caller's projects with their KBs, for client discovery.
 
-        Returns ``[{project, project_id, kbs: [{kb, kb_id, last_activity,
-        snapshot_count}]}]``. ``last_activity`` is the newest snapshot's timestamp
-        (or None), ``snapshot_count`` the exact snapshot count. The native client's
-        home screen reads this — unlike the editor, the phone doesn't already know
-        its project + branch. Cloud scopes to the authenticated user's org."""
+        Returns ``[{project, project_id, archived_at, kbs: [{kb, kb_id,
+        finding_count, last_finding_at, archived_at}]}]``. ``finding_count`` and
+        ``last_finding_at`` cover live findings only (``invalidated_at IS NULL``).
+
+        ``include_archived`` is a single switch over both tiers: False (default)
+        omits archived projects *and* archived KBs of active projects; True
+        returns everything, each row carrying its ``archived_at`` so the caller
+        can tell them apart. Cloud scopes to the authenticated user's org."""
         ...
 
     def set_archived(

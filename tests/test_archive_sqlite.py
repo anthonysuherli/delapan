@@ -53,3 +53,62 @@ def test_archive_mismatched_pair_raises(store):
     _, other_pid = store.resolve_project("repoB", create=True)
     with pytest.raises(RuntimeError):
         store.set_archived(project_id=other_pid, kb_id=kid, archived=True)
+
+
+async def test_list_projects_reports_real_finding_activity(store):
+    pid, kid = _seed(store)
+    await store.insert_findings([{
+        "org_id": _ORG, "kb_id": kid, "title": "t", "content": "c",
+        "category": "anything-at-all", "confidence": 1.0,
+        "tags": [], "provenance": {}, "embedding": [0.0] * 1536,
+    }])
+    [proj] = store.list_projects()
+    [kb] = proj["kbs"]
+    assert kb["finding_count"] == 1
+    assert kb["last_finding_at"] is not None
+    assert "snapshot_count" not in kb
+    assert "last_activity" not in kb
+
+
+async def test_superseded_findings_do_not_inflate_the_count(store):
+    """Bi-temporal exclusion — retired rows must not count as activity."""
+    pid, kid = _seed(store)
+    [fid] = await store.insert_findings([{
+        "org_id": _ORG, "kb_id": kid, "title": "t", "content": "c",
+        "category": "x", "confidence": 1.0,
+        "tags": [], "provenance": {}, "embedding": [0.0] * 1536,
+    }])
+    await store.invalidate_finding(kid, fid)
+    [proj] = store.list_projects()
+    assert proj["kbs"][0]["finding_count"] == 0
+    assert store.set_archived(
+        project_id=pid, kb_id=kid, archived=True
+    )["finding_count"] == 0
+
+
+def test_archived_kb_hidden_by_default(store):
+    pid, kid = _seed(store)
+    store.set_archived(project_id=pid, kb_id=kid, archived=True)
+    [proj] = store.list_projects()
+    assert proj["kbs"] == []
+    [proj_all] = store.list_projects(include_archived=True)
+    assert proj_all["kbs"][0]["archived_at"] is not None
+
+
+def test_archived_project_hidden_by_default(store):
+    pid, _ = _seed(store)
+    store.set_archived(project_id=pid, archived=True)
+    assert store.list_projects() == []
+    assert len(store.list_projects(include_archived=True)) == 1
+
+
+def test_project_archive_does_not_stamp_its_kbs(store):
+    """Cascade-by-read: the KB row keeps its own NULL so unarchive is lossless."""
+    pid, kid = _seed(store)
+    store.set_archived(project_id=pid, archived=True)
+    [proj] = store.list_projects(include_archived=True)
+    assert proj["archived_at"] is not None
+    assert proj["kbs"][0]["archived_at"] is None
+    store.set_archived(project_id=pid, archived=False)
+    [restored] = store.list_projects()
+    assert len(restored["kbs"]) == 1
