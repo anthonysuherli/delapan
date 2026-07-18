@@ -5,7 +5,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY delapan ./delapan
 
-RUN pip install --no-cache-dir -e ".[cloud]"
+RUN pip install --no-cache-dir -e ".[cloud,local]"
 
 EXPOSE 8000
 
