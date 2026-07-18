@@ -11,6 +11,12 @@ deliberately small — four tools:
     delapan_explore   — run the research pipeline + persist findings
     delapan_projects  — list the caller's projects/KBs
 
+Each tool is a thin tenancy-resolution wrapper around a shared ``_*_impl``
+function; ``delapan/mcp/cloud_server.py`` reuses those same ``_*_impl``
+functions with claude.ai-token-based tenancy resolution instead of this
+module's fixed-configured-user login, so the two entrypoints share one copy
+of the actual tool logic.
+
 Run with: ``python -m delapan.mcp.server``.
 """
 
@@ -23,6 +29,7 @@ from mcp.server.fastmcp import FastMCP
 
 from delapan.core.agent.preamble import Depth, select_preamble
 from delapan.core.agent.synopsis import maybe_rebuild_synopsis
+from delapan.core.agent.state import TenantContext
 from delapan.core.clients.embeddings import embed_text
 from delapan.core.config import get_config, get_settings
 from delapan.core.exploration import run_exploration
@@ -45,6 +52,12 @@ def _now_iso() -> str:
 # --- Inject → this conversation --------------------------------------------
 
 
+async def _resume_impl(ctx: TenantContext, query: str | None, depth: Depth) -> dict:
+    store = get_store(ctx.access_token, org_id=ctx.org_id)
+    preamble, coverage = await select_preamble(query, store=store, kb_id=ctx.kb_id, depth=depth)
+    return {"banner": DELAPAN_BANNER, "preamble": preamble, "coverage": coverage}
+
+
 @mcp.tool()
 async def delapan_resume(
     project: str, kb: str, query: str | None = None, depth: Depth = "normal"
@@ -58,12 +71,17 @@ async def delapan_resume(
         ctx = resolve_tenant(project, kb, create=False)
     except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
         return {"error": f"KB not found ({project}/{kb}): {exc}"}
-    store = get_store(ctx.access_token, org_id=ctx.org_id)
-    preamble, coverage = await select_preamble(query, store=store, kb_id=ctx.kb_id, depth=depth)
-    return {"banner": DELAPAN_BANNER, "preamble": preamble, "coverage": coverage}
+    return await _resume_impl(ctx, query, depth)
 
 
 # --- Recall ----------------------------------------------------------------
+
+
+async def _search_impl(ctx: TenantContext, query: str, limit: int | None) -> dict:
+    store = get_store(ctx.access_token, org_id=ctx.org_id)
+    emb = await embed_text(query)
+    hits = await store.match_findings(ctx.kb_id, emb, match_count=limit or 10, min_similarity=0.0)
+    return {"query": query, "findings": hits}
 
 
 @mcp.tool()
@@ -75,24 +93,13 @@ async def delapan_search(project: str, kb: str, query: str, limit: int | None = 
         ctx = resolve_tenant(project, kb, create=False)
     except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
         return {"error": f"KB not found ({project}/{kb}): {exc}"}
-    store = get_store(ctx.access_token, org_id=ctx.org_id)
-    emb = await embed_text(query)
-    hits = await store.match_findings(ctx.kb_id, emb, match_count=limit or 10, min_similarity=0.0)
-    return {"query": query, "findings": hits}
+    return await _search_impl(ctx, query, limit)
 
 
-# --- Build the KB ----------------------------------------------------------
+# --- Build the KB ------------------------------------------------------------
 
 
-@mcp.tool()
-async def delapan_explore(
-    project: str, kb: str, prompt: str, max_findings: int | None = None
-) -> dict:
-    """Run the research pipeline (plan→search→crawl→extract→merge) and persist
-    findings to the named KB (creating the project/KB on demand). Blocks until
-    complete (may take several minutes; the calling client may time out). Returns
-    ``{"exploration_id", "finding_ids", "count"}``."""
-    ctx = resolve_tenant(project, kb, create=True)
+async def _explore_impl(ctx: TenantContext, prompt: str, max_findings: int | None) -> dict:
     store = get_store(ctx.access_token, org_id=ctx.org_id)
     cfg = get_config().exploration
     cap = min(max_findings or cfg.default_max_findings, cfg.max_findings)
@@ -126,7 +133,23 @@ async def delapan_explore(
     return {"exploration_id": exp_id, "finding_ids": ids, "count": len(ids)}
 
 
+@mcp.tool()
+async def delapan_explore(
+    project: str, kb: str, prompt: str, max_findings: int | None = None
+) -> dict:
+    """Run the research pipeline (plan→search→crawl→extract→merge) and persist
+    findings to the named KB (creating the project/KB on demand). Blocks until
+    complete (may take several minutes; the calling client may time out). Returns
+    ``{"exploration_id", "finding_ids", "count"}``."""
+    ctx = resolve_tenant(project, kb, create=True)
+    return await _explore_impl(ctx, prompt, max_findings)
+
+
 # --- Tenancy ---------------------------------------------------------------
+
+
+def _projects_impl(store) -> dict:
+    return {"projects": store.list_projects()}
 
 
 @mcp.tool()
@@ -134,7 +157,7 @@ async def delapan_projects() -> dict:
     """List the caller's projects (by name) with their KBs — for client discovery.
     Returns ``{"projects": [...]}``."""
     store = resolve_store()
-    return {"projects": store.list_projects()}
+    return _projects_impl(store)
 
 
 def main() -> None:
