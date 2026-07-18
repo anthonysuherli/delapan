@@ -38,6 +38,16 @@ def test_patch_project_archives(client):
     assert client.get("/api/projects?include_archived=true").json()["projects"]
 
 
-def test_patch_unknown_project_404s(client):
+def test_patch_unknown_project_404s_and_creates_nothing(client):
+    before = client.get("/api/projects?include_archived=true").json()["projects"]
     r = client.patch("/api/projects/nope", json={"archived": True})
     assert r.status_code == 404
+    after = client.get("/api/projects?include_archived=true").json()["projects"]
+    assert [p["project"] for p in after] == [p["project"] for p in before]
+
+
+def test_patch_unknown_kb_404s_and_creates_nothing(client):
+    r = client.patch("/api/projects/repoA/kbs/nope", json={"archived": True})
+    assert r.status_code == 404
+    [proj] = client.get("/api/projects?include_archived=true").json()["projects"]
+    assert [k["kb"] for k in proj["kbs"]] == ["main"]

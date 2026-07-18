@@ -30,24 +30,40 @@ def list_projects(include_archived: bool = False) -> dict:
 
 
 def _resolve_ids(store, project: str, kb: str | None) -> tuple[str, str | None]:
-    """Names → ids, without creating anything. Raises 404 when absent."""
+    """Names → ids, without creating anything. Raises 404 when absent.
+
+    Only ``RuntimeError`` means "not found" — the Store contract promises that
+    and nothing else. Catching broader would report a DB failure or a genuine
+    bug as a 404 and hide it.
+    """
     try:
         org_id, project_id = store.resolve_project(project, create=False)
         kb_id = store.resolve_kb(org_id, project_id, kb, create=False) if kb else None
-    except Exception as exc:  # noqa: BLE001 — missing project/KB is a 404, not a 500
+    except RuntimeError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return project_id, kb_id
+
+
+def _archive(store, project_id: str, kb_id: str | None, archived: bool) -> dict:
+    """Apply the flag. ``set_archived`` raises RuntimeError for a missing target
+    or a (project, kb) pair that doesn't belong together — both are 404s."""
+    try:
+        return store.set_archived(
+            project_id=project_id, kb_id=kb_id, archived=archived
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.patch("/projects/{project}")
 def archive_project(project: str, body: ArchiveRequest) -> dict:
     store = resolve_store()
     project_id, _ = _resolve_ids(store, project, None)
-    return store.set_archived(project_id=project_id, archived=body.archived)
+    return _archive(store, project_id, None, body.archived)
 
 
 @router.patch("/projects/{project}/kbs/{kb}")
 def archive_kb(project: str, kb: str, body: ArchiveRequest) -> dict:
     store = resolve_store()
     project_id, kb_id = _resolve_ids(store, project, kb)
-    return store.set_archived(project_id=project_id, kb_id=kb_id, archived=body.archived)
+    return _archive(store, project_id, kb_id, body.archived)
