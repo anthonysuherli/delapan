@@ -652,7 +652,7 @@ class SQLiteStore:
                 ON f.kb_id = k.id AND f.invalidated_at IS NULL
              WHERE p.org_id = ? AND p.name != ?
              GROUP BY p.id, k.id
-             ORDER BY p.created_at, k.created_at;
+             ORDER BY p.created_at, p.id, k.created_at, k.id;
             """,
             (_ORG, JOURNAL_SCOPE),
         ).fetchall()

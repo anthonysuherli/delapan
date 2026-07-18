@@ -44,5 +44,7 @@ as $$
    where p.org_id = p_org_id
      and p.name <> '__journal__'
      and (p_include_archived or p.archived_at is null)
-   order by p.created_at, k.created_at;
+   -- id tiebreakers: created_at alone is not unique when rows are
+   -- created in the same transaction, and the order must be stable.
+   order by p.created_at, p.id, k.created_at, k.id;
 $$;
