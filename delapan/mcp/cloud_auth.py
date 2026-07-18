@@ -20,6 +20,9 @@ def _default_client(_token: str) -> Any:
     from delapan.core.config import get_settings
 
     s = get_settings()
+    assert s.supabase_url and s.supabase_anon_key, (
+        "SUPABASE_URL and SUPABASE_ANON_KEY required for the cloud tier."
+    )
     return create_client(s.supabase_url, s.supabase_anon_key)
 
 

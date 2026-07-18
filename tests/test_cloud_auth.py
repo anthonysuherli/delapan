@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from delapan.mcp.cloud_auth import SupabaseTokenVerifier
+from delapan.mcp.cloud_auth import SupabaseTokenVerifier, _default_client
 
 
 class _FakeAuth:
@@ -35,3 +35,15 @@ async def test_verify_token_invalid_returns_none():
     )
     result = await verifier.verify_token("bad-token")
     assert result is None
+
+
+def test_default_client_guards_unset_settings(monkeypatch):
+    import delapan.core.config as config_module
+
+    monkeypatch.setattr(
+        config_module,
+        "get_settings",
+        lambda: SimpleNamespace(supabase_url=None, supabase_anon_key=None),
+    )
+    with pytest.raises(AssertionError):
+        _default_client("tok-abc")
