@@ -45,3 +45,11 @@ def test_archive_project_level(store):
 def test_archive_unknown_raises(store):
     with pytest.raises(RuntimeError):
         store.set_archived(project_id="nope", archived=True)
+
+
+def test_archive_mismatched_pair_raises(store):
+    """A kb_id that doesn't belong to project_id must raise, not silently pass."""
+    pid, kid = _seed(store)
+    _, other_pid = store.resolve_project("repoB", create=True)
+    with pytest.raises(RuntimeError):
+        store.set_archived(project_id=other_pid, kb_id=kid, archived=True)

@@ -672,11 +672,22 @@ class SQLiteStore:
         self, *, project_id: str, kb_id: str | None = None, archived: bool
     ) -> dict:
         """Stamp/clear ``archived_at`` on a KB (or the project when kb_id is None)."""
-        table, row_id = ("kbs", kb_id) if kb_id else ("projects", project_id)
-        row = self._conn.execute(
-            f"SELECT archived_at FROM {table} WHERE id = ? AND org_id = ?;",
-            (row_id, _ORG),
-        ).fetchone()
+        # The KB lookup is scoped by project_id too: a (project, kb) pair that
+        # doesn't belong together must raise, not silently archive the KB and
+        # echo back an unrelated project_id.
+        if kb_id:
+            table, row_id = "kbs", kb_id
+            row = self._conn.execute(
+                "SELECT archived_at FROM kbs "
+                "WHERE id = ? AND org_id = ? AND project_id = ?;",
+                (kb_id, _ORG, project_id),
+            ).fetchone()
+        else:
+            table, row_id = "projects", project_id
+            row = self._conn.execute(
+                "SELECT archived_at FROM projects WHERE id = ? AND org_id = ?;",
+                (project_id, _ORG),
+            ).fetchone()
         if row is None:
             raise RuntimeError(f"{table} {row_id!r} not found")
 
@@ -686,7 +697,8 @@ class SQLiteStore:
         else:
             stamp = _now_iso() if archived else None
             self._conn.execute(
-                f"UPDATE {table} SET archived_at = ? WHERE id = ?;", (stamp, row_id)
+                f"UPDATE {table} SET archived_at = ? WHERE id = ? AND org_id = ?;",
+                (stamp, row_id, _ORG),
             )
             self._conn.commit()
 
