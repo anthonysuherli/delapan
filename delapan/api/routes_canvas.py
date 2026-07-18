@@ -72,9 +72,13 @@ async def _search_events(
     ccfg = cfg.canvas
     cap = min(body.max_candidates or ccfg.max_candidates, ccfg.max_candidates)
 
-    preamble_xml, coverage = await select_preamble(
-        body.prompt, store=store, kb_id=ctx.kb_id, depth="shallow"
-    )
+    try:
+        preamble_xml, coverage = await select_preamble(
+            body.prompt, store=store, kb_id=ctx.kb_id, depth="shallow"
+        )
+    except Exception as exc:  # noqa: BLE001 — embedding/provider failure; surface as SSE error
+        yield _sse({"phase": "error", "error": f"grounding failed: {exc}"})
+        return
     yield _sse({"phase": "grounding", "coverage": coverage})
 
     queue: asyncio.Queue[dict | None] = asyncio.Queue()

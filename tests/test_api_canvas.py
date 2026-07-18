@@ -163,6 +163,28 @@ def test_canvas_search_provider_failure_emits_error_and_fails_row(client, kb, mo
     assert rows[0][0] == "failed" and "432 quota" in rows[0][1]
 
 
+def test_canvas_search_grounding_failure_emits_error(client, kb, monkeypatch):
+    for key in ("TAVILY_API_KEY", "AI_GATEWAY_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.setenv(key, "fake")
+    from delapan.core.config import get_settings
+
+    get_settings.cache_clear()
+    from delapan.api import routes_canvas as canvas_mod
+
+    async def _boom_preamble(query, *, store, kb_id, depth="shallow"):
+        raise RuntimeError("embeddings provider failed: 432 quota")
+
+    monkeypatch.setattr(canvas_mod, "select_preamble", _boom_preamble)
+
+    r = client.post(f"{BASE}/canvas/search", json={"prompt": "x"})
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    frames = _frames(r.text)
+    assert frames[-1]["phase"] == "error"
+    assert "grounding failed" in frames[-1]["error"]
+    assert "432 quota" in frames[-1]["error"]
+
+
 @pytest.fixture()
 def keep_env(monkeypatch):
     """Keep path needs embeddings faked (no real keys) and memory enabled."""
