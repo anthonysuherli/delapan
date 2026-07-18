@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 from delapan.core.clients.supabase import service_client
 from delapan.tracking.parse import load_tracking_dir
@@ -35,7 +36,8 @@ def main(argv: list[str] | None = None) -> int:
 
     client = service_client()
     response = client.table("tracking_initiatives").select("slug").execute()
-    remote_slugs = {row["slug"] for row in (response.data or [])}
+    remote_rows = cast(list[dict[str, Any]], response.data or [])
+    remote_slugs = {cast(str, row["slug"]) for row in remote_rows}
     plan = plan_sync(initiatives, remote_slugs, backlog)
     apply_sync(client, plan, dry_run=args.dry_run)
     return 0

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from delapan.tracking.models import BacklogItem, InitiativeRow
 
@@ -20,7 +20,7 @@ class SyncPlan:
 
 
 class TrackingTableClient(Protocol):
-    def table(self, name: str) -> Any: ...
+    def table(self, table_name: str, /) -> Any: ...
 
 
 def plan_sync(
@@ -80,7 +80,11 @@ def apply_sync(client: TrackingTableClient, plan: SyncPlan, *, dry_run: bool) ->
     for slug in plan.delete_slugs:
         client.table("tracking_initiatives").delete().eq("slug", slug).execute()
 
-    client.table("tracking_backlog").delete().gte("position", 1).execute()
+    response = client.table("tracking_backlog").select("position").execute()
+    backlog_rows = cast(list[dict[str, Any]], response.data or [])
+    for row in backlog_rows:
+        client.table("tracking_backlog").delete().eq("position", row["position"]).execute()
+
     if plan.backlog:
         client.table("tracking_backlog").insert(
             [_backlog_payload(row, synced_at) for row in plan.backlog]
