@@ -112,3 +112,27 @@ def test_project_archive_does_not_stamp_its_kbs(store):
     store.set_archived(project_id=pid, archived=False)
     [restored] = store.list_projects()
     assert len(restored["kbs"]) == 1
+
+
+def test_project_with_no_kbs_still_listed(store):
+    """The LEFT JOIN filler row must not drop the project or fake a KB."""
+    _, pid = store.resolve_project("emptyRepo", create=True)
+    [proj] = [p for p in store.list_projects() if p["project_id"] == pid]
+    assert proj["project"] == "emptyRepo"
+    assert proj["kbs"] == []
+
+
+def test_partial_archive_leaves_sibling_kbs(store):
+    pid, kid = _seed(store)
+    other = store.resolve_kb(_ORG, pid, "dev", create=True)
+    store.set_archived(project_id=pid, kb_id=kid, archived=True)
+
+    [proj] = store.list_projects()
+    assert [k["kb"] for k in proj["kbs"]] == ["dev"]
+
+    [proj_all] = store.list_projects(include_archived=True)
+    assert sorted(k["kb"] for k in proj_all["kbs"]) == ["dev", "main"]
+    archived = next(k for k in proj_all["kbs"] if k["kb"] == "main")
+    assert archived["archived_at"] is not None
+    assert next(k for k in proj_all["kbs"] if k["kb"] == "dev")["archived_at"] is None
+    assert other  # kb id returned by resolve_kb
