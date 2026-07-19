@@ -4,12 +4,13 @@
 
 A third entry path alongside the (cloud-only) HTTP API; it drains the same engine
 through the Store seam, so one engine serves both tiers. The surface is
-deliberately small — four tools:
+deliberately small — five tools:
 
     delapan_resume    — inject KB context (banner + preamble + coverage)
     delapan_search    — semantic search over existing findings
     delapan_explore   — run the research pipeline + persist findings
     delapan_projects  — list the caller's projects/KBs
+    delapan_archive   — archive/unarchive a project or KB (reversible)
 
 Each tool is a thin tenancy-resolution wrapper around a shared ``_*_impl``
 function; ``delapan/mcp/cloud_server.py`` reuses those same ``_*_impl``
@@ -99,8 +100,35 @@ async def delapan_search(project: str, kb: str, query: str, limit: int | None = 
 # --- Build the KB ------------------------------------------------------------
 
 
+def _clear_archive(store, ctx) -> bool:
+    """Unarchive ctx's KB and project if either was archived. Returns whether
+    anything changed — explore reports it so the flip is visible, not silent."""
+    project = next(
+        (
+            p
+            for p in store.list_projects(include_archived=True)
+            if p["project_id"] == ctx.project_id
+        ),
+        None,
+    )
+    if project is None:
+        return False
+    kb = next((k for k in project["kbs"] if k["kb_id"] == ctx.kb_id), None)
+    was_archived = project["archived_at"] is not None or (
+        kb is not None and kb["archived_at"] is not None
+    )
+    if was_archived:
+        store.set_archived(project_id=ctx.project_id, kb_id=ctx.kb_id, archived=False)
+        store.set_archived(project_id=ctx.project_id, archived=False)
+    return was_archived
+
+
 async def _explore_impl(ctx: TenantContext, prompt: str, max_findings: int | None) -> dict:
     store = get_store(ctx.access_token, org_id=ctx.org_id)
+    # Writing to a KB means it's live again. Either flag hides it, so clear both
+    # the KB's and its project's, and report the flip in the result so the state
+    # change is never silent.
+    was_archived = _clear_archive(store, ctx)
     cfg = get_config().exploration
     cap = min(max_findings or cfg.default_max_findings, cfg.max_findings)
 
@@ -135,6 +163,7 @@ async def _explore_impl(ctx: TenantContext, prompt: str, max_findings: int | Non
         "finding_ids": ids,
         "count": len(ids),
         "synopsis": syn_status,
+        "unarchived": was_archived,
     }
 
 
@@ -145,8 +174,9 @@ async def delapan_explore(
     """Run the research pipeline (plan→search→crawl→extract→merge) and persist
     findings to the named KB (creating the project/KB on demand). Blocks until
     complete (may take several minutes; the calling client may time out). Returns
-    ``{"exploration_id", "finding_ids", "count", "synopsis"}`` — ``synopsis`` is the
-    rebuild status (``"rebuilt"``/``"skipped"``/``"failed: <msg>"``)."""
+    ``{"exploration_id", "finding_ids", "count", "synopsis", "unarchived"}`` —
+    ``synopsis`` is the rebuild status (``"rebuilt"``/``"skipped"``/``"failed: <msg>"``),
+    ``unarchived`` reports whether writing here flipped an archived KB back to live."""
     ctx = resolve_tenant(project, kb, create=True)
     return await _explore_impl(ctx, prompt, max_findings)
 
@@ -154,16 +184,44 @@ async def delapan_explore(
 # --- Tenancy ---------------------------------------------------------------
 
 
-def _projects_impl(store) -> dict:
-    return {"projects": store.list_projects()}
+def _projects_impl(store, include_archived: bool = False) -> dict:
+    return {"projects": store.list_projects(include_archived=include_archived)}
 
 
 @mcp.tool()
-async def delapan_projects() -> dict:
+async def delapan_projects(include_archived: bool = False) -> dict:
     """List the caller's projects (by name) with their KBs — for client discovery.
+    Each KB carries ``finding_count`` and ``last_finding_at`` (live findings only).
+    Archived projects/KBs are omitted unless ``include_archived`` is true.
     Returns ``{"projects": [...]}``."""
     store = resolve_store()
-    return _projects_impl(store)
+    return _projects_impl(store, include_archived=include_archived)
+
+
+@mcp.tool()
+async def delapan_archive(project: str, kb: str | None = None, archived: bool = True) -> dict:
+    """Archive or unarchive a project (omit ``kb``) or a single KB. Reversible and
+    non-destructive — stamps ``archived_at`` and touches no finding, node, or edge.
+    Archived KBs drop out of ``delapan_projects`` but stay fully readable by
+    ``delapan_resume`` / ``delapan_search``; running ``delapan_explore`` against one
+    unarchives it. Returns ``{"project", "kb", "archived", "archived_at",
+    "finding_count"}`` — check ``finding_count`` to see what you just put away."""
+    store = resolve_store()
+    try:
+        org_id, project_id = store.resolve_project(project, create=False)
+        kb_id = store.resolve_kb(org_id, project_id, kb, create=False) if kb else None
+    except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
+        target = f"{project}/{kb}" if kb else project
+        return {"error": f"Not found ({target}): {exc}"}
+
+    out = store.set_archived(project_id=project_id, kb_id=kb_id, archived=archived)
+    return {
+        "project": project,
+        "kb": kb,
+        "archived": archived,
+        "archived_at": out["archived_at"],
+        "finding_count": out["finding_count"],
+    }
 
 
 def main() -> None:

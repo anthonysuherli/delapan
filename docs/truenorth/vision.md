@@ -7,20 +7,27 @@
 Delapan is an agentic knowledge-base engine: research/ingest → embedded,
 deduplicated **findings** → a **synopsis** spine and an LLM-extracted
 **knowledge graph**, tapped by Claude Code or deployed as a `/v1/*` context API.
-This vision sets the direction for four coupled initiatives: **(0) unify storage
-on Supabase (Postgres + pgvector) as the single `Store` backend — run locally via
-OrbStack/Docker and synced to cloud, retiring SQLite;** (1) adopt a **mem0-style
+This vision sets the direction for four coupled initiatives: **(0) keep two
+storage tiers at strict `Store`-protocol parity — SQLite + sqlite-vec local /
+open-core, Supabase (Postgres + pgvector) cloud;** (1) adopt a **mem0-style
 fact-resolution memory layer** behind the `Store` seam, (2) make the **retrieval
 backend pluggable** (pgvector canonical, Elasticsearch optional), and (3) evolve
 the existing graph frontend into a **live, HITL-governed dashboard** where the
 user watches the graph grow and previews the consequence of every governance
-decision before it commits.
+decision before it commits. A fifth concern runs across all of them: **the
+knowledge base must stay navigable as it grows** — reversible archiving and
+activity reporting you can trust.
 
 ## End Goals
-- **Unified Supabase storage (local + cloud).** One `Store` backend — Supabase
-  (Postgres + pgvector + GoTrue) — serves both a self-hosted local instance (run
-  via OrbStack/Docker) and managed cloud, with one schema and data sync between
-  them. SQLite/sqlite-vec is retired.
+- **Two tiers at protocol parity.** SQLite + sqlite-vec is the local/open-core
+  tier; Supabase (Postgres + pgvector) is the cloud tier. Both implement the full
+  `Store` protocol with identical return shapes — the engine cannot tell them
+  apart. Neither tier is retired.
+- **Reversible KB lifecycle.** Projects and KBs can be archived and unarchived
+  through the `Store` seam — never hard-deleted — so the workspace stays
+  navigable as it grows. Discovery surfaces report activity derived from actual
+  finding writes, so "what is dormant" is answerable from data rather than
+  guessed.
 - **Self-correcting memory writes.** Memory enters the KB through a mem0-style
   fact-resolution pipeline (ADD / UPDATE / DELETE / NOOP against top-k similar
   existing memories), sitting *behind* the `Store` protocol — so the KB stays
@@ -40,10 +47,12 @@ decision before it commits.
 - **Not** replacing delapan's findings/`Store` architecture wholesale. mem0 lives
   *behind* the seam, not on top of it; the engine still depends on `Store`, not
   on mem0 directly.
-- **Not** maintaining two storage backends. SQLite/sqlite-vec is **removed**;
-  Supabase (Postgres + pgvector) is the only `Store` implementation. "Local"
-  means a self-hosted Supabase stack (OrbStack/Docker), not a zero-service file
-  store. (mem0 graph-memory and Elasticsearch remain optional, config-gated.)
+- **Not** letting the two storage backends diverge. Both are maintained, but
+  neither may drift: a `Store` method that lands on one tier and not the other is
+  an unfinished feature, not a tier-specific one. (mem0 graph-memory and
+  Elasticsearch remain optional, config-gated.)
+- **Not** hard deletion, purge, or GC of projects/KBs. Archiving sets state; it
+  never removes rows.
 - **Not** a greenfield dashboard. We evolve the existing sigma.js control panel
   (canvas, inspector, node/edge CRUD), not rebuild it.
 - **Not** adopting mem0's hosted/managed platform — OSS, self-hosted only.
@@ -54,13 +63,16 @@ decision before it commits.
 ## Invariants
 - The `Store` protocol stays the **single persistence seam**. No backend-specific
   object crosses it; return shapes stay plain dicts/lists of dicts.
-- The **local tier runs the same Supabase stack as cloud** (Postgres + pgvector +
-  GoTrue) via OrbStack/Docker — there is no SQLite/sqlite-vec backend. Local dev
-  and the **full test suite run fully offline** against this local stack, with
-  **no dependency on the production cloud project**.
-- **Cloud and local share one `Store` implementation and one schema** (Supabase
-  migrations) — parity by construction, not by discipline.
+- Every `Store` method lands on **both** backends with identical return shapes
+  before the feature is done. Parity by construction, not by discipline.
+- The **offline test suite runs hermetically against the local SQLite tier**,
+  with **no dependency on the production cloud project**.
 - Every finding / node / edge keeps its **`grounded_in` provenance**.
+- Archiving is **always reversible and non-destructive**: it sets state, never
+  removes findings, nodes, edges, or `grounded_in` provenance. No delapan surface
+  hard-deletes a project or KB.
+- Activity and coverage metrics derive from **first-class engine writes**, never
+  from a category or convention owned by a fork or downstream client.
 - **No user governance decision mutates the graph without the consequence being
   shown first** on the decision-preview surface; cancel must leave the graph
   byte-for-byte unchanged.
@@ -82,17 +94,24 @@ decision before it commits.
 - **Consequence preview round-trips.** Initiate an approve/reject/merge on a
   pending node/edge → a before/after diff renders → **cancel** leaves the graph
   unchanged, **confirm** applies exactly the previewed change.
-- **Local stack is hermetic.** `supabase start` (on OrbStack) brings up Postgres
-  + pgvector + GoTrue; the full test suite runs green against that local stack
-  using only local creds (no production-cloud access).
+- **Local suite is hermetic.** The full test suite runs green offline against the
+  SQLite tier, with no production-cloud access.
+- **Archive round-trips.** Archive a KB → it drops out of default
+  `delapan_projects` output → unarchive → it returns with its finding count
+  unchanged. Same behaviour on both backends.
+- **Activity reporting is truthful.** `delapan_projects` reports non-zero recent
+  activity for any KB written to today.
 
 ## Planned Detours
-- **Supabase unification (foundational).** Build `SupabaseStore` (full `Store`
-  parity) + SQL migrations + RLS + the `match_findings`/`match_kg_nodes` RPCs;
-  stand up local Supabase via OrbStack; port the SQLite-only work (mem0
-  `resolve`/`update_finding`/`resolution_events`, the content decoder) to it; then
-  **remove `SQLiteStore` + sqlite-vec**. After this detour, return to the storage
-  End Goal and unblock all others.
+- **KB lifecycle + truthful activity.** Add reversible archive state for projects
+  and KBs across both backends, and rebuild `list_projects` to report
+  `finding_count` / `last_finding_at` from real finding writes instead of the
+  br8n-owned `category='snapshot'` convention. After this detour, return to End
+  Goal 2 (reversible KB lifecycle).
+- **OrbStack local Supabase (optional).** Stand up a local Supabase stack so the
+  cloud code path can be tested hermetically instead of via `fake_supabase.py` or
+  opt-in production smoke. Does not change which tier is canonical. After this
+  detour, return to End Goal 1 (protocol parity).
 - **mem0 port behind the `Store` seam** — wrap mem0's fact-resolution + vector
   abstraction under the existing protocol; keep findings/synopsis/grounding.
   After this detour, return to End Goals 1 and 5.
@@ -128,3 +147,25 @@ decision before it commits.
   direction) — this vision's storage End Goal is stale and should be revisited,
   not silently treated as still in effect. — Ratified by: anthonysuherli
   (session 2026-07-16)
+- 2026-07-18 — **Resolved the stale storage End Goal 0.** Replaced "unified
+  Supabase storage / SQLite retired" with **two tiers at strict `Store`-protocol
+  parity** (SQLite + sqlite-vec local/open-core, Supabase cloud; neither
+  retired). This codifies the shipped system rather than an aspiration: SQLite is
+  1,276 lines implementing 38/38 protocol methods with zero deprecation markers,
+  the backend selector defaults to SQLite when cloud creds are absent, no local
+  Supabase stack exists (no `config.toml`, no docker-compose — backlog only), and
+  the offline suite runs on SQLite while Supabase is covered by `fake_supabase.py`
+  or opt-in production smoke. Sequencing confirmed the intent: SQLite received the
+  bi-temporal write primitives first (`f60b6b4`, `0429924`), then Supabase was
+  brought to parity (`ba8eda5`). `docs/tracking/initiatives/supabase-storage-
+  unification.md` had already marked the goal `blocked`. Retired the "Supabase
+  unification (foundational)" detour; OrbStack local Supabase survives as an
+  optional test-hermeticity detour only.
+  **Added End Goal "Reversible KB lifecycle"** — archive/unarchive for projects
+  and KBs through the `Store` seam, never hard delete, plus activity reporting
+  derived from real finding writes. Motivated by 83 KBs across 29 projects with
+  no delete or archive mechanism anywhere in the codebase, and by
+  `list_projects` ranking every KB by `category='snapshot'` — a br8n-owned
+  convention that nothing has written since 2026-06-09, while 3,321 other
+  findings landed through 2026-07-18, making every KB look dormant.
+  — Ratified by: anthonysuherli (session 2026-07-18)

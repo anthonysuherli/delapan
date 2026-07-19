@@ -91,10 +91,10 @@ LIST_MAX_LIMIT = 1000
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
-  id TEXT PRIMARY KEY, org_id TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL);
+  id TEXT PRIMARY KEY, org_id TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL, archived_at TEXT);
 CREATE TABLE IF NOT EXISTS kbs (
   id TEXT PRIMARY KEY, org_id TEXT NOT NULL, project_id TEXT NOT NULL, name TEXT NOT NULL,
-  created_at TEXT NOT NULL, init_offered_at TEXT, drift_offered_count INTEGER);
+  created_at TEXT NOT NULL, init_offered_at TEXT, drift_offered_count INTEGER, archived_at TEXT);
 CREATE TABLE IF NOT EXISTS findings (
   id TEXT PRIMARY KEY, org_id TEXT NOT NULL, kb_id TEXT NOT NULL,
   title TEXT, content TEXT, category TEXT, confidence REAL,
@@ -148,6 +148,9 @@ _ADD_COLUMN_MIGRATIONS: list[str] = [
     # (for NOOP) the urls merged plus the confidence delta.
     "ALTER TABLE resolution_events ADD COLUMN new_finding_id TEXT;",
     "ALTER TABLE resolution_events ADD COLUMN details TEXT;",
+    # 0011: reversible KB lifecycle — NULL archived_at = active.
+    "ALTER TABLE projects ADD COLUMN archived_at TEXT;",
+    "ALTER TABLE kbs ADD COLUMN archived_at TEXT;",
 ]
 
 # Cap on how many grounding finding ids a long-lived node (a repo touched for
@@ -635,35 +638,111 @@ class SQLiteStore:
             create,
         )
 
-    def list_projects(self) -> list[dict]:
-        """All local projects + KBs with snapshot last-activity/count (newest KB rows last)."""
-        projects: list[dict] = []
-        prows = self._conn.execute(
-            "SELECT id, name FROM projects WHERE org_id = ? AND name != ? ORDER BY created_at;",
+    def list_projects(self, *, include_archived: bool = False) -> list[dict]:
+        """Projects + KBs with live-finding activity, in one aggregate query."""
+        rows = self._conn.execute(
+            """
+            SELECT p.id AS pid, p.name AS pname, p.archived_at AS parch,
+                   k.id AS kid, k.name AS kname, k.archived_at AS karch,
+                   COUNT(f.id) AS n, MAX(f.created_at) AS last
+              FROM projects p
+              LEFT JOIN kbs k
+                ON k.project_id = p.id AND k.org_id = p.org_id
+              LEFT JOIN findings f
+                ON f.kb_id = k.id AND f.invalidated_at IS NULL
+             WHERE p.org_id = ? AND p.name != ?
+             GROUP BY p.id, k.id
+             ORDER BY p.created_at, p.id, k.created_at, k.id;
+            """,
             (_ORG, JOURNAL_SCOPE),
         ).fetchall()
-        for p in prows:
-            kbs: list[dict] = []
-            krows = self._conn.execute(
-                "SELECT id, name FROM kbs WHERE org_id = ? AND project_id = ? ORDER BY created_at;",
-                (_ORG, p["id"]),
-            ).fetchall()
-            for k in krows:
-                agg = self._conn.execute(
-                    "SELECT COUNT(*) AS n, MAX(created_at) AS last FROM findings "
-                    "WHERE kb_id = ? AND category = 'snapshot';",
-                    (k["id"],),
-                ).fetchone()
-                kbs.append(
-                    {
-                        "kb": k["name"],
-                        "kb_id": k["id"],
-                        "snapshot_count": int(agg["n"]),
-                        "last_activity": agg["last"],
-                    }
-                )
-            projects.append({"project": p["name"], "project_id": p["id"], "kbs": kbs})
-        return projects
+
+        out: list[dict] = []
+        by_pid: dict[str, dict] = {}
+        for r in rows:
+            if not include_archived and r["parch"] is not None:
+                continue
+            proj = by_pid.get(r["pid"])
+            if proj is None:
+                proj = {
+                    "project": r["pname"],
+                    "project_id": r["pid"],
+                    "archived_at": r["parch"],
+                    "kbs": [],
+                }
+                by_pid[r["pid"]] = proj
+                out.append(proj)
+            if r["kid"] is None:
+                continue  # project with no KBs — LEFT JOIN filler row
+            if not include_archived and r["karch"] is not None:
+                continue
+            proj["kbs"].append(
+                {
+                    "kb": r["kname"],
+                    "kb_id": r["kid"],
+                    "finding_count": int(r["n"]),
+                    "last_finding_at": r["last"],
+                    "archived_at": r["karch"],
+                }
+            )
+        return out
+
+    def set_archived(
+        self, *, project_id: str, kb_id: str | None = None, archived: bool
+    ) -> dict:
+        """Stamp/clear ``archived_at`` on a KB (or the project when kb_id is None)."""
+        # The KB lookup is scoped by project_id too: a (project, kb) pair that
+        # doesn't belong together must raise, not silently archive the KB and
+        # echo back an unrelated project_id.
+        if kb_id:
+            table, row_id = "kbs", kb_id
+            row = self._conn.execute(
+                "SELECT archived_at FROM kbs "
+                "WHERE id = ? AND org_id = ? AND project_id = ?;",
+                (kb_id, _ORG, project_id),
+            ).fetchone()
+        else:
+            table, row_id = "projects", project_id
+            row = self._conn.execute(
+                "SELECT archived_at FROM projects WHERE id = ? AND org_id = ?;",
+                (project_id, _ORG),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError(f"{table} {row_id!r} not found")
+
+        current = row["archived_at"]
+        if archived and current is not None:
+            stamp = current  # idempotent — don't move the timestamp
+        else:
+            stamp = _now_iso() if archived else None
+            self._conn.execute(
+                f"UPDATE {table} SET archived_at = ? WHERE id = ? AND org_id = ?;",
+                (stamp, row_id, _ORG),
+            )
+            self._conn.commit()
+
+        return {
+            "project_id": project_id,
+            "kb_id": kb_id,
+            "archived_at": stamp,
+            "finding_count": self._live_finding_count(project_id, kb_id),
+        }
+
+    def _live_finding_count(self, project_id: str, kb_id: str | None) -> int:
+        """Live (non-invalidated) findings in one KB, or across a project's KBs."""
+        if kb_id:
+            r = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM findings "
+                "WHERE kb_id = ? AND invalidated_at IS NULL;",
+                (kb_id,),
+            ).fetchone()
+        else:
+            r = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM findings WHERE invalidated_at IS NULL "
+                "AND kb_id IN (SELECT id FROM kbs WHERE project_id = ?);",
+                (project_id,),
+            ).fetchone()
+        return int(r["n"])
 
     def _find_or_create(
         self, table: str, match: dict[str, str], insert: dict[str, object], create: bool

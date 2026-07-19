@@ -55,6 +55,24 @@ The local tier stores everything in `~/.delapan/delapan.db` (override with
 | **Pluggable storage** — `Store` protocol; ships SQLite, plus a Supabase/pgvector backend | `store/` |
 | **MCP server** | `mcp/` |
 
+## Project tracking
+
+Solo initiative status and prioritized backlog live in [`docs/tracking/`](docs/tracking/)
+(markdown source of truth). See the [design spec](docs/superpowers/specs/2026-07-17-solo-project-tracker-design.md).
+
+**Automatic sync**
+- Local: `.git/hooks/post-commit` (installed from `.githooks/post-commit`) runs
+  `scripts/tracking_sync.py` after commits that touch `docs/tracking/`.
+- CI: GitHub Action `tracking-sync` mirrors on push (needs secrets
+  `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`).
+
+Manual:
+
+```bash
+uv run python scripts/tracking_sync.py --dry-run
+uv run python scripts/tracking_sync.py
+```
+
 Findings, KBs, and projects are not separate submodules — that persistence lives
 inside the `Store` implementations themselves (`store/sqlite.py`, `store/supabase.py`),
 behind the one `Store` protocol below.
@@ -109,7 +127,7 @@ pytest && ruff check .
 - The `Store` seam — `get_store()` → `SQLiteStore`; tenancy, project listing, findings, synopsis, KG.
 - The engine core — `agent` (preamble/synopsis/resume), `exploration`, `memory` (resolver + persist), `knowledge_graph` models.
 - The tenancy gateway — `resolve_tenant()` resolves a local tenant through the store.
-- The MCP server — `delapan_resume` / `delapan_search` / `delapan_explore` / `delapan_projects` (whole package imports; all 4 tools register and run).
+- The MCP server — `delapan_resume` / `delapan_search` / `delapan_explore` / `delapan_projects` / `delapan_archive` (whole package imports; all 5 tools register and run).
 - `python -m delapan.api.main` → `/health` plus the `/api/*` surface: projects,
   per-KB graph read/write (nodes/edges CRUD, stats, schema), findings
   list/get/delete, synopsis, resume, explore over SSE, and **canvas search/keep** over SSE.

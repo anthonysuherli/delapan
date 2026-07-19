@@ -73,31 +73,101 @@ class SupabaseStore:
         ).execute()
         return kid
 
-    def list_projects(self) -> list[dict]:
-        prows = (
-            self._c.table("projects").select("id,name")
-            .eq("org_id", self._org_id).neq("name", "__journal__")
-            .order("created_at").execute().data
-        )
+    def list_projects(self, *, include_archived: bool = False) -> list[dict]:
+        """Projects + KBs with live-finding activity, via one RPC round-trip."""
+        rows = self._c.rpc(
+            "list_projects_with_activity",
+            {"p_org_id": self._org_id, "p_include_archived": include_archived},
+        ).execute().data or []
+
         out: list[dict] = []
-        for p in prows:
-            krows = (
-                self._c.table("kbs").select("id,name")
-                .eq("org_id", self._org_id).eq("project_id", p["id"])
-                .order("created_at").execute().data
+        by_pid: dict[str, dict] = {}
+        for r in rows:
+            pid = r["project_id"]
+            proj = by_pid.get(pid)
+            if proj is None:
+                proj = {
+                    "project": r["project_name"],
+                    "project_id": pid,
+                    "archived_at": r["project_archived_at"],
+                    "kbs": [],
+                }
+                by_pid[pid] = proj
+                out.append(proj)
+            if r["kb_id"] is None:
+                continue  # project with no KBs — LEFT JOIN filler row
+            proj["kbs"].append(
+                {
+                    "kb": r["kb_name"],
+                    "kb_id": r["kb_id"],
+                    "finding_count": int(r["finding_count"]),
+                    "last_finding_at": r["last_finding_at"],
+                    "archived_at": r["kb_archived_at"],
+                }
             )
-            kbs = []
-            for k in krows:
-                snaps = (
-                    self._c.table("findings").select("created_at", count="exact")
-                    .eq("kb_id", k["id"]).eq("category", "snapshot")
-                    .order("created_at", desc=True).limit(1).execute()
-                )
-                last = snaps.data[0]["created_at"] if snaps.data else None
-                kbs.append({"kb": k["name"], "kb_id": k["id"],
-                            "snapshot_count": snaps.count or 0, "last_activity": last})
-            out.append({"project": p["name"], "project_id": p["id"], "kbs": kbs})
         return out
+
+    def set_archived(
+        self, *, project_id: str, kb_id: str | None = None, archived: bool
+    ) -> dict:
+        """Stamp/clear ``archived_at`` on a KB (or the project when kb_id is None)."""
+        # The KB lookup is scoped by project_id too — same contract as the SQLite
+        # tier: a (project, kb) pair that doesn't belong together must raise.
+        table, row_id = ("kbs", kb_id) if kb_id else ("projects", project_id)
+        q = (
+            self._c.table(table).select("archived_at")
+            .eq("id", row_id).eq("org_id", self._org_id)
+        )
+        if kb_id:
+            q = q.eq("project_id", project_id)
+        cur = q.limit(1).execute().data
+        if not cur:
+            raise RuntimeError(f"{table} {row_id!r} not found")
+
+        current = cur[0].get("archived_at")
+        if archived and current is not None:
+            stamp = current  # idempotent — don't move the timestamp
+        else:
+            stamp = _now_iso() if archived else None
+            res = (
+                self._c.table(table).update({"archived_at": stamp})
+                .eq("id", row_id).eq("org_id", self._org_id).execute()
+            )
+            # Prefer the value Postgres echoes back. A timestamptz round-trips
+            # through PostgREST in its own format, so returning the Python-side
+            # string here and the DB-side string on the idempotent path below
+            # would make two archives of the same KB disagree.
+            if res.data and archived:
+                stamp = res.data[0].get("archived_at", stamp)
+
+        return {
+            "project_id": project_id,
+            "kb_id": kb_id,
+            "archived_at": stamp,
+            "finding_count": self._live_finding_count(project_id, kb_id),
+        }
+
+    def _live_finding_count(self, project_id: str, kb_id: str | None) -> int:
+        """Live (non-invalidated) findings in one KB, or across a project's KBs."""
+        if kb_id:
+            kb_ids = [kb_id]
+        else:
+            kb_ids = [
+                r["id"]
+                for r in (
+                    self._c.table("kbs").select("id")
+                    .eq("org_id", self._org_id).eq("project_id", project_id)
+                    .execute().data
+                )
+            ]
+        if not kb_ids:
+            return 0
+        res = (
+            self._c.table("findings").select("id", count="exact")
+            .in_("kb_id", kb_ids).is_("invalidated_at", "null")
+            .limit(1).execute()
+        )
+        return res.count or 0
 
     # --- findings ------------------------------------------------------------
 
