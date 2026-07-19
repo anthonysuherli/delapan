@@ -25,6 +25,10 @@ MCP tools: **`delapan_resume`** (tap a KB → resume card), **`delapan_search`**
 (semantic recall over findings), **`delapan_explore`** (gap-fill from the web,
 needs LLM + Tavily keys), **`delapan_backlog`** (ranked gap/sparse queries the KB
 was asked and couldn't answer), **`delapan_projects`** (cross-repo discovery).
+KG co-design seam: **`delapan_propose_kg_schema`** → **`delapan_set_kg_schema`**
+(draft a target ontology from the findings, then validate + persist the approved
+version) and **`delapan_build_graph`** / **`delapan_get_kg_schema`** (build the
+graph steered by the intent schema; compare intent vs emergent ontology).
 
 ```python
 # the engine, on SQLite, with no cloud creds:

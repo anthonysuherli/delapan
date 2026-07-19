@@ -4,14 +4,18 @@
 
 A third entry path alongside the (cloud-only) HTTP API; it drains the same engine
 through the Store seam, so one engine serves both tiers. The surface is
-deliberately small — six tools:
+deliberately small — ten tools:
 
-    delapan_resume    — inject KB context (banner + preamble + coverage)
-    delapan_search    — semantic search over existing findings
-    delapan_explore   — run the research pipeline + persist findings
-    delapan_backlog   — ranked gap/sparse queries awaiting research
-    delapan_projects  — list the caller's projects/KBs
-    delapan_archive   — archive/unarchive a project or KB (reversible)
+    delapan_resume            — inject KB context (banner + preamble + coverage)
+    delapan_search            — semantic search over existing findings
+    delapan_explore           — run the research pipeline + persist findings
+    delapan_backlog           — ranked gap/sparse queries awaiting research
+    delapan_projects          — list the caller's projects/KBs
+    delapan_archive           — archive/unarchive a project or KB (reversible)
+    delapan_propose_kg_schema — draft a target ontology from the KB's findings
+    delapan_set_kg_schema     — validate + persist the approved ontology (versioned)
+    delapan_get_kg_schema     — intent vs emergent ontology, side by side
+    delapan_build_graph       — build/refresh the KG (schema-steered when set)
 
 Each tool is a thin tenancy-resolution wrapper around a shared ``_*_impl``
 function; ``delapan/mcp/cloud_server.py`` reuses those same ``_*_impl``
@@ -37,7 +41,9 @@ from delapan.core.config import get_config, get_settings
 from delapan.core.curation.backlog import rank_backlog
 from delapan.core.curation.recorder import schedule_record
 from delapan.core.exploration import run_exploration
-from delapan.core.knowledge_graph.builder import schedule_kg_update
+from delapan.core.knowledge_graph.builder import _gather_findings, build_graph, schedule_kg_update
+from delapan.core.knowledge_graph.schema import KGSchema, propose_schema, validate_schema
+from delapan.core.knowledge_graph.service import kg_schema_view
 from delapan.core.memory.persist import resolve_and_persist
 from delapan.store import get_store
 
@@ -261,6 +267,112 @@ async def delapan_backlog(project: str, kb: str, limit: int | None = None) -> di
     rows = await store.list_curation_topics(ctx.kb_id, limit=500)
     ranked = rank_backlog(rows or [], cfg, datetime.now(timezone.utc))
     return {"topics": ranked[: (limit or cfg.backlog_limit)]}
+
+
+# --- KG intent schema (co-design seam) ---------------------------------------
+
+
+async def _propose_kg_schema_impl(ctx: TenantContext, max_findings: int | None) -> dict:
+    store = get_store(ctx.access_token, org_id=ctx.org_id)
+    cfg = get_config().knowledge_graph
+    # The Store's list view omits `content`, so reuse the builder's hydrating
+    # loader — a titles-only catalogue would starve the proposer of grounding.
+    findings = _gather_findings(
+        store, ctx.kb_id, finding_ids=None, max_findings=max_findings or cfg.max_findings
+    )
+    stats = store.kg_stats(ctx.kb_id)
+    # Bias the draft toward the ontology an already-built graph grew organically.
+    emergent: dict | None = None
+    if stats.get("node_count", 0) or stats.get("edge_count", 0):
+        emergent = {
+            "node_types": list((stats.get("by_type") or {}).keys()),
+            "relations": list((stats.get("by_relation") or {}).keys()),
+        }
+    draft = await propose_schema(findings, cfg, emergent=emergent)
+    out = draft.model_dump()
+    if not findings:
+        out["note"] = "KB has no findings — explore or ingest first for a grounded proposal."
+    return out
+
+
+@mcp.tool()
+async def delapan_propose_kg_schema(project: str, kb: str, max_findings: int | None = None) -> dict:
+    """STEP 1 of KG-intent co-design. Mine the KB's findings and propose a draft
+    target ontology: ``node_types``, ``relation_types``, ``relation_validity``,
+    and ``competency_questions``. Persists nothing — review with the user, then
+    approve with ``delapan_set_kg_schema``. If the KB has no findings the draft
+    is a generic default plus a ``note``."""
+    try:
+        ctx = resolve_tenant(project, kb, create=False)
+    except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
+        return {"error": f"KB not found ({project}/{kb}): {exc}"}
+    return await _propose_kg_schema_impl(ctx, max_findings)
+
+
+def _set_kg_schema_impl(ctx: TenantContext, schema: dict) -> dict:
+    try:
+        parsed = KGSchema.model_validate(schema)
+    except Exception as exc:  # noqa: BLE001 — surface validation errors to the caller
+        return {"ok": False, "errors": [f"schema does not parse: {exc}"]}
+    errors = validate_schema(parsed)
+    if errors:
+        return {"ok": False, "errors": errors}
+    store = get_store(ctx.access_token, org_id=ctx.org_id)
+    stored = store.set_kg_intent(ctx.org_id, ctx.kb_id, parsed.model_dump())
+    return {"ok": True, "schema": stored}
+
+
+@mcp.tool()
+async def delapan_set_kg_schema(project: str, kb: str, schema: dict) -> dict:
+    """STEP 2 of KG-intent co-design. Validate and persist the user-approved KG
+    schema dict (as returned by ``delapan_propose_kg_schema``, edited as the user
+    wishes) as a new version. Returns ``{ok: true, schema}`` on success, or
+    ``{ok: false, errors}`` when the schema is malformed (nothing is saved).
+    The next ``delapan_build_graph(use_schema=True)`` builds against it."""
+    try:
+        ctx = resolve_tenant(project, kb, create=False)
+    except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
+        return {"error": f"KB not found ({project}/{kb}): {exc}"}
+    return _set_kg_schema_impl(ctx, schema)
+
+
+def _get_kg_schema_impl(ctx: TenantContext) -> dict:
+    store = get_store(ctx.access_token, org_id=ctx.org_id)
+    return kg_schema_view(store, ctx.kb_id)
+
+
+@mcp.tool()
+async def delapan_get_kg_schema(project: str, kb: str) -> dict:
+    """Both ontologies for the KB: ``intent`` (the approved target schema set via
+    ``delapan_set_kg_schema``, or null) and ``emergent`` (the node/relation types
+    actually present in the built graph). Compare the two to see drift — the same
+    view the HTTP ``GET .../graph/schema`` serves."""
+    try:
+        ctx = resolve_tenant(project, kb, create=False)
+    except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
+        return {"error": f"KB not found ({project}/{kb}): {exc}"}
+    return _get_kg_schema_impl(ctx)
+
+
+@mcp.tool()
+async def delapan_build_graph(
+    project: str,
+    kb: str,
+    max_findings: int | None = None,
+    rebuild: bool = True,
+    use_schema: bool = True,
+) -> dict:
+    """Build/refresh the KB's knowledge graph from its findings. An LLM extracts
+    entities + relationships, deduped into kg_nodes/kg_edges. ``rebuild=True``
+    (default) clears the existing graph first. ``use_schema=True`` steers
+    extraction with the KB's approved intent schema when one is set; free-form
+    otherwise. Returns ``{findings_scanned, nodes_created, edges_created,
+    node_count, edge_count}``."""
+    try:
+        ctx = resolve_tenant(project, kb, create=False)
+    except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
+        return {"error": f"KB not found ({project}/{kb}): {exc}"}
+    return await build_graph(ctx, max_findings=max_findings, rebuild=rebuild, use_schema=use_schema)
 
 
 # --- Tenancy ---------------------------------------------------------------
