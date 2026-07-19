@@ -668,14 +668,114 @@ class SupabaseStore:
 
     # --- monitoring (best-effort, never raises) ------------------------------
 
-    async def record_access(self, *, org_id: str, kb_id: str, surface: str,
-                            targets: list, query_text: str | None = None) -> None:
+    async def record_access(
+        self,
+        *,
+        org_id: str,
+        kb_id: str,
+        surface: str,
+        targets: list,
+        query_text: str | None = None,
+        coverage: str | None = None,
+        band_counts: dict | None = None,
+    ) -> None:
+        """Append one query-level access event. Never raises.
+
+        Shape matches the live table: `targets`/`created_at` do not exist there and
+        `target_type` is NOT NULL — the old insert could never have landed. `targets`
+        stays on the signature for Protocol parity and is not written; per-target
+        fan-out rows can be added later with no schema change."""
+
         def _run() -> None:
             try:
                 self._c.table("access_events").insert(
-                    {"org_id": self._org_id, "kb_id": kb_id, "surface": surface,
-                     "targets": list(targets), "query_text": query_text,
-                     "created_at": _now_iso()}).execute()
+                    {
+                        "org_id": self._org_id,
+                        "kb_id": kb_id,
+                        "target_type": "query",
+                        "target_id": None,
+                        "surface": surface,
+                        "query_text": query_text,
+                        "coverage": coverage,
+                        "band_counts": band_counts,
+                        "ts": _now_iso(),
+                    }
+                ).execute()
             except Exception:  # noqa: BLE001 — monitoring must never break the caller
                 pass
+
+        await asyncio.to_thread(_run)
+
+    # --- curation flywheel ---------------------------------------------------
+
+    async def match_curation_topics(
+        self, kb_id: str, query_embedding: list[float], match_count: int, min_similarity: float
+    ) -> list[dict]:
+        params = {
+            "query_embedding": self._vec(query_embedding),
+            "match_kb_id": kb_id,
+            "match_count": match_count,
+            "min_similarity": min_similarity,
+        }
+        data = await asyncio.to_thread(
+            lambda: self._c.rpc("match_curation_topics", params).execute().data
+        )
+        return data or []
+
+    async def upsert_curation_topic(self, row: dict) -> str:
+        params = {
+            "p_org_id": self._org_id,
+            "p_kb_id": row["kb_id"],
+            "p_query_text": row["query_text"],
+            "p_query_norm": row["query_norm"],
+            "p_embedding": self._vec(row["embedding"]) if row.get("embedding") else None,
+            "p_coverage": row["coverage"],
+            "p_seen": row.get("seen_at") or _now_iso(),
+        }
+        data = await asyncio.to_thread(
+            lambda: self._c.rpc("upsert_curation_topic", params).execute().data
+        )
+        return data if isinstance(data, str) else (data or [{}])[0].get("id", "")
+
+    async def bump_curation_topic(
+        self, kb_id: str, topic_id: str, *, coverage: str, seen_at: str
+    ) -> None:
+        params = {"p_topic_id": topic_id, "p_coverage": coverage, "p_seen": seen_at}
+        await asyncio.to_thread(
+            lambda: self._c.rpc("bump_curation_topic", params).execute()
+        )
+
+    async def update_curation_topic(self, kb_id: str, topic_id: str, **patch) -> None:
+        allowed = {"consumed_at", "resolved_at"}
+        body = {k: v for k, v in patch.items() if k in allowed}
+        if not body:
+            return
+        await asyncio.to_thread(
+            lambda: self._c.table("curation_topics").update(body)
+            .eq("id", topic_id).eq("kb_id", kb_id).execute()
+        )
+
+    async def list_curation_topics(
+        self, kb_id: str, *, include_closed: bool = False, limit: int | None = None
+    ) -> list[dict]:
+        def _run() -> list[dict]:
+            q = self._c.table("curation_topics").select(
+                "id, query_text, query_norm, coverage, recurrence, first_seen, "
+                "last_seen, consumed_at, resolved_at"
+            ).eq("kb_id", kb_id)
+            if not include_closed:
+                q = q.is_("consumed_at", "null").is_("resolved_at", "null")
+            return q.order("last_seen", desc=True).limit(min(limit or 100, 500)).execute().data
+
+        return await asyncio.to_thread(_run) or []
+
+    async def prune_access_events(self, kb_id: str, older_than_iso: str) -> None:
+        def _run() -> None:
+            try:
+                self._c.table("access_events").delete().eq("kb_id", kb_id).lt(
+                    "ts", older_than_iso
+                ).execute()
+            except Exception:  # noqa: BLE001 — best-effort
+                pass
+
         await asyncio.to_thread(_run)

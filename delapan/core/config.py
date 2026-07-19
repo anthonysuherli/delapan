@@ -226,6 +226,27 @@ class UserProfileConfig(BaseModel):
     activity_window_days: int = 30  # access_events lookback for the activity signal
 
 
+class CurationConfig(BaseModel):
+    """Gap-driven curation flywheel: persist each coverage verdict, aggregate
+    gap/sparse queries into a recurrence-ranked backlog, consume it explicitly.
+
+    On by default — recording is zero-latency, best-effort and invisible; nothing
+    changes until someone reads the backlog or omits `prompt` on explore. A
+    dark-launched flywheel accumulates nothing and is useless when switched on.
+    """
+
+    enabled: bool = True  # kill-switch: no recording, no backlog, explore needs a prompt
+    record_search: bool = True  # also record delapan_search verdicts
+    topic_match_threshold: float = 0.83  # cosine sim for paraphrase→topic assignment
+    recency_half_life_days: int = 14  # backlog score decay
+    gap_weight: float = 2.0  # gap topics outrank sparse
+    sparse_weight: float = 1.0
+    backlog_limit: int = 20  # default view size
+    min_query_chars: int = 8  # skip trivial queries
+    events_retention_days: int = 90  # access_events prune horizon
+    prune_sample_rate: float = 0.01  # P(a recording also prunes its KB)
+
+
 class ExplorationConfig(BaseModel):
     """`explore` tool + research pipeline knobs.
 
@@ -426,6 +447,7 @@ class AppConfig(BaseModel):
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     knowledge_graph: KnowledgeGraphConfig = Field(default_factory=KnowledgeGraphConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    curation: CurationConfig = Field(default_factory=CurationConfig)
     concepts: ConceptsConfig = Field(default_factory=ConceptsConfig)
     prompts: PromptsConfig = Field(default_factory=PromptsConfig)
 

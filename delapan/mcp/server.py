@@ -4,11 +4,12 @@
 
 A third entry path alongside the (cloud-only) HTTP API; it drains the same engine
 through the Store seam, so one engine serves both tiers. The surface is
-deliberately small — five tools:
+deliberately small — six tools:
 
     delapan_resume    — inject KB context (banner + preamble + coverage)
     delapan_search    — semantic search over existing findings
     delapan_explore   — run the research pipeline + persist findings
+    delapan_backlog   — ranked gap/sparse queries awaiting research
     delapan_projects  — list the caller's projects/KBs
     delapan_archive   — archive/unarchive a project or KB (reversible)
 
@@ -28,11 +29,13 @@ from datetime import datetime, timezone
 
 from mcp.server.fastmcp import FastMCP
 
-from delapan.core.agent.preamble import Depth, select_preamble
+from delapan.core.agent.preamble import Depth, assess_coverage, band_findings, select_preamble
 from delapan.core.agent.synopsis import maybe_rebuild_synopsis
 from delapan.core.agent.state import TenantContext
 from delapan.core.clients.embeddings import embed_text
 from delapan.core.config import get_config, get_settings
+from delapan.core.curation.backlog import rank_backlog
+from delapan.core.curation.recorder import schedule_record
 from delapan.core.exploration import run_exploration
 from delapan.core.knowledge_graph.builder import schedule_kg_update
 from delapan.core.memory.persist import resolve_and_persist
@@ -55,7 +58,9 @@ def _now_iso() -> str:
 
 async def _resume_impl(ctx: TenantContext, query: str | None, depth: Depth) -> dict:
     store = get_store(ctx.access_token, org_id=ctx.org_id)
-    preamble, coverage = await select_preamble(query, store=store, kb_id=ctx.kb_id, depth=depth)
+    preamble, coverage = await select_preamble(
+        query, store=store, kb_id=ctx.kb_id, depth=depth, surface="resume", org_id=ctx.org_id
+    )
     return {"banner": DELAPAN_BANNER, "preamble": preamble, "coverage": coverage}
 
 
@@ -82,6 +87,24 @@ async def _search_impl(ctx: TenantContext, query: str, limit: int | None) -> dic
     store = get_store(ctx.access_token, org_id=ctx.org_id)
     emb = await embed_text(query)
     hits = await store.match_findings(ctx.kb_id, emb, match_count=limit or 10, min_similarity=0.0)
+
+    cur = get_config().curation
+    tiers = get_config().tiers
+    limit_used = limit or 10
+    # A `rich` verdict needs `rich_hit_count` band-1 hits; below that the verdict
+    # would be an artifact of the caller's limit, not of the KB.
+    if cur.record_search and limit_used >= tiers.rich_hit_count:
+        bands = band_findings(hits or [], tiers)
+        schedule_record(
+            store,
+            kb_id=ctx.kb_id,
+            org_id=ctx.org_id,
+            surface="search",
+            query=query,
+            coverage=assess_coverage(bands, tiers),
+            bands=bands,
+            embedding=emb,
+        )
     return {"query": query, "findings": hits}
 
 
@@ -123,8 +146,23 @@ def _clear_archive(store, ctx) -> bool:
     return was_archived
 
 
-async def _explore_impl(ctx: TenantContext, prompt: str, max_findings: int | None) -> dict:
+async def _explore_impl(ctx: TenantContext, prompt: str | None, max_findings: int | None) -> dict:
     store = get_store(ctx.access_token, org_id=ctx.org_id)
+    # Promptless: consume the KB's top curation gap in place of a caller prompt.
+    # Resolved before any archive flip so an empty backlog changes nothing.
+    topic_id: str | None = None
+    if prompt is None:
+        cur = get_config().curation
+        rows = await store.list_curation_topics(ctx.kb_id, limit=500)
+        ranked = rank_backlog(rows or [], cur, datetime.now(timezone.utc))
+        if not ranked:
+            return {
+                "error": "backlog empty — pass a prompt, or run resume/search so gaps get recorded"
+            }
+        top = ranked[0]
+        topic_id, prompt = top["id"], top["query_text"]
+        await store.update_curation_topic(ctx.kb_id, topic_id, consumed_at=_now_iso())
+
     # Writing to a KB means it's live again. Either flag hides it, so clear both
     # the KB's and its project's, and report the flip in the result so the state
     # change is never silent.
@@ -132,8 +170,9 @@ async def _explore_impl(ctx: TenantContext, prompt: str, max_findings: int | Non
     cfg = get_config().exploration
     cap = min(max_findings or cfg.default_max_findings, cfg.max_findings)
 
-    exp_id = store.create_exploration(ctx.org_id, ctx.kb_id, prompt)
+    exp_id: str | None = None
     try:
+        exp_id = store.create_exploration(ctx.org_id, ctx.kb_id, prompt)
         findings = await run_exploration(
             prompt,
             exploration_id=exp_id,
@@ -154,31 +193,74 @@ async def _explore_impl(ctx: TenantContext, prompt: str, max_findings: int | Non
         # scheduler, gated on an approved intent schema — no-op otherwise).
         syn_status = await maybe_rebuild_synopsis(ctx.kb_id, org_id=ctx.org_id, store=store)
         schedule_kg_update(ctx, ids, store=store)
-    except Exception as exc:  # noqa: BLE001 — mark the row failed, then re-raise
-        store.update_exploration(exp_id, status="failed", completed_at=_now_iso(), error=str(exc))
+    except Exception as exc:  # noqa: BLE001 — restore the topic, then re-raise the original
+        if topic_id:  # a failed run must return the topic to the backlog
+            try:
+                await store.update_curation_topic(ctx.kb_id, topic_id, consumed_at=None)
+            except Exception:  # noqa: BLE001 — best-effort; the raise below is the signal
+                pass
+        if exp_id is not None:  # no row to mark failed if create_exploration itself failed
+            try:
+                store.update_exploration(
+                    exp_id, status="failed", completed_at=_now_iso(), error=str(exc)
+                )
+            except Exception:  # noqa: BLE001 — bookkeeping must never mask the original exc
+                pass
         raise
 
-    return {
+    out = {
         "exploration_id": exp_id,
         "finding_ids": ids,
         "count": len(ids),
         "synopsis": syn_status,
         "unarchived": was_archived,
     }
+    if topic_id:
+        out["backlog_topic"] = topic_id
+    return out
 
 
 @mcp.tool()
 async def delapan_explore(
-    project: str, kb: str, prompt: str, max_findings: int | None = None
+    project: str, kb: str, prompt: str | None = None, max_findings: int | None = None
 ) -> dict:
     """Run the research pipeline (plan→search→crawl→extract→merge) and persist
     findings to the named KB (creating the project/KB on demand). Blocks until
     complete (may take several minutes; the calling client may time out). Returns
     ``{"exploration_id", "finding_ids", "count", "synopsis", "unarchived"}`` —
     ``synopsis`` is the rebuild status (``"rebuilt"``/``"skipped"``/``"failed: <msg>"``),
-    ``unarchived`` reports whether writing here flipped an archived KB back to live."""
-    ctx = resolve_tenant(project, kb, create=True)
+    ``unarchived`` reports whether writing here flipped an archived KB back to live.
+
+    With no ``prompt``, consumes the top item of the KB's curation backlog — the
+    gap the KB was asked about most — and adds ``"backlog_topic"`` to the result.
+    An empty backlog returns an error and creates nothing."""
+    try:  # a promptless call reads a backlog, so it must never create the KB
+        ctx = resolve_tenant(project, kb, create=prompt is not None)
+    except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
+        return {"error": f"KB not found ({project}/{kb}): {exc}"}
     return await _explore_impl(ctx, prompt, max_findings)
+
+
+# --- Curation backlog --------------------------------------------------------
+
+
+@mcp.tool()
+async def delapan_backlog(project: str, kb: str, limit: int | None = None) -> dict:
+    """The KB's curation backlog — gap/sparse queries it was asked and could not
+    answer, ranked by recurrence × severity × recency. Returns ``{"topics": [...]}``,
+    each entry the full topic row (``id, query_text, query_norm, coverage,
+    recurrence, first_seen, last_seen, consumed_at, resolved_at``, etc.) plus a
+    computed ``score``. Feed the top one to ``delapan_explore`` (or call explore
+    with no prompt to consume it)."""
+    try:
+        ctx = resolve_tenant(project, kb, create=False)
+    except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
+        return {"error": f"KB not found ({project}/{kb}): {exc}"}
+    store = get_store(ctx.access_token, org_id=ctx.org_id)
+    cfg = get_config().curation
+    rows = await store.list_curation_topics(ctx.kb_id, limit=500)
+    ranked = rank_backlog(rows or [], cfg, datetime.now(timezone.utc))
+    return {"topics": ranked[: (limit or cfg.backlog_limit)]}
 
 
 # --- Tenancy ---------------------------------------------------------------

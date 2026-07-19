@@ -17,6 +17,7 @@ query the preamble is synopsis-only and works keyless (coverage = "gap").
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -24,7 +25,8 @@ from fastapi.responses import JSONResponse
 
 from delapan.api.deps import resolve_kb_or_404
 from delapan.core.agent.preamble import select_preamble
-from delapan.core.config import get_settings
+from delapan.core.config import get_config, get_settings
+from delapan.core.curation.backlog import rank_backlog
 
 router = APIRouter(prefix="/api/projects/{project}/kbs/{kb}")
 
@@ -80,6 +82,16 @@ async def resume(
     if query and not get_settings().openai_api_key:
         return JSONResponse(status_code=503, content={"error": "embeddings unavailable"})
     preamble, coverage = await select_preamble(
-        query or None, store=store, kb_id=ctx.kb_id, depth=depth
+        query or None, store=store, kb_id=ctx.kb_id, depth=depth,
+        surface="resume", org_id=ctx.org_id,
     )
     return JSONResponse({"preamble": preamble, "coverage": coverage})
+
+
+@router.get("/backlog")
+async def backlog(project: str, kb: str, limit: int | None = None) -> JSONResponse:
+    ctx, store = resolve_kb_or_404(project, kb)
+    cfg = get_config().curation
+    rows = await store.list_curation_topics(ctx.kb_id, limit=500)
+    ranked = rank_backlog(rows or [], cfg, datetime.now(timezone.utc))
+    return JSONResponse({"topics": ranked[: (limit or cfg.backlog_limit)]})
