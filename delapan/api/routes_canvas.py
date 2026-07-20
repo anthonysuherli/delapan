@@ -19,11 +19,12 @@ import json
 from datetime import datetime, timezone
 from typing import AsyncIterator, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from delapan.api.deps import missing_pipeline_keys, resolve_kb_or_404
+from delapan.api.auth import request_tenancy
+from delapan.api.deps import missing_pipeline_keys
 from delapan.core.agent.preamble import select_preamble
 from delapan.core.agent.state import TenantContext
 from delapan.core.agent.synopsis import maybe_rebuild_synopsis
@@ -155,8 +156,11 @@ async def _search_events(
 
 
 @router.post("/canvas/search")
-async def canvas_search(project: str, kb: str, body: CanvasSearchBody) -> StreamingResponse:
-    ctx, store = resolve_kb_or_404(project, kb)
+async def canvas_search(
+    body: CanvasSearchBody,
+    tenancy: tuple[TenantContext, Store] = Depends(request_tenancy),
+) -> StreamingResponse:
+    ctx, store = tenancy
     return StreamingResponse(_search_events(ctx, store, body), media_type="text/event-stream")
 
 
@@ -178,9 +182,11 @@ def _clamped_content(content: dict, cap: int) -> dict:
 
 
 @router.post("/canvas/keep")
-async def canvas_keep(project: str, kb: str, body: KeepBody) -> dict:
+async def canvas_keep(
+    body: KeepBody, tenancy: tuple[TenantContext, Store] = Depends(request_tenancy)
+) -> dict:
     """Persist kept candidates through the memory resolver (the HITL gate)."""
-    ctx, store = resolve_kb_or_404(project, kb)
+    ctx, store = tenancy
     if not body.candidates:
         raise HTTPException(status_code=400, detail="no candidates to keep")
 

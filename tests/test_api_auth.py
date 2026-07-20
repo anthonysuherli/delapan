@@ -126,3 +126,40 @@ def test_request_tenancy_auth_none_delegates(monkeypatch):
 
     assert request_tenancy("p", "k", _Req()) == sentinel
     get_config.cache_clear()
+
+
+@pytest.fixture()
+def supabase_mode_client(monkeypatch, tmp_path):
+    """TestClient with api.auth=supabase — requests without/with tokens hit the gate.
+    Local SQLite backend keeps it hermetic; tenancy resolution is never reached
+    for the 401/403 assertions."""
+    monkeypatch.setenv("DELAPAN_BACKEND", "local")
+    monkeypatch.setenv("DELAPAN_DB_PATH", str(tmp_path / "api.db"))
+    monkeypatch.setenv("DLP_API__AUTH", "supabase")
+    from delapan.core.config import get_config, get_settings
+
+    get_settings.cache_clear()
+    get_config.cache_clear()
+    from fastapi.testclient import TestClient
+
+    from delapan.api.main import app
+
+    yield TestClient(app)
+    get_settings.cache_clear()
+    get_config.cache_clear()
+
+
+def test_routes_require_token_in_supabase_mode(supabase_mode_client):
+    for path in ("/api/projects", "/api/projects/p/kbs/k/findings"):
+        r = supabase_mode_client.get(path)
+        assert r.status_code == 401, path
+
+
+def test_routes_403_without_beta_membership(supabase_mode_client, monkeypatch):
+    import delapan.api.auth as auth_mod
+
+    monkeypatch.setattr(auth_mod, "_service_client", lambda: _FakeService([]))
+    r = supabase_mode_client.get(
+        "/api/projects", headers={"Authorization": f"Bearer {_token('u-no-beta')}"}
+    )
+    assert r.status_code == 403

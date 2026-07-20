@@ -20,26 +20,34 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
-from delapan.api.deps import resolve_kb_or_404
+from delapan.api.auth import request_tenancy
 from delapan.core.agent.preamble import select_preamble
+from delapan.core.agent.state import TenantContext
 from delapan.core.config import get_config, get_settings
 from delapan.core.curation.backlog import rank_backlog
+from delapan.store import Store
 
 router = APIRouter(prefix="/api/projects/{project}/kbs/{kb}")
 
 
 @router.get("/findings")
-def list_findings(project: str, kb: str, category: str | None = None, limit: int = 50) -> dict:
-    ctx, store = resolve_kb_or_404(project, kb)
+def list_findings(
+    category: str | None = None,
+    limit: int = 50,
+    tenancy: tuple[TenantContext, Store] = Depends(request_tenancy),
+) -> dict:
+    ctx, store = tenancy
     return store.list_findings(ctx.kb_id, category=category or None, limit=limit)
 
 
 @router.get("/findings/{finding_id}")
-def get_finding(project: str, kb: str, finding_id: str) -> dict:
-    ctx, store = resolve_kb_or_404(project, kb)
+def get_finding(
+    finding_id: str, tenancy: tuple[TenantContext, Store] = Depends(request_tenancy)
+) -> dict:
+    ctx, store = tenancy
     try:
         return store.get_finding(ctx.kb_id, finding_id)
     except Exception:  # noqa: BLE001 — not in this KB; try a cross-KB resolve below
@@ -55,8 +63,10 @@ def get_finding(project: str, kb: str, finding_id: str) -> dict:
 
 
 @router.delete("/findings/{finding_id}")
-def delete_finding(project: str, kb: str, finding_id: str) -> dict:
-    ctx, store = resolve_kb_or_404(project, kb)
+def delete_finding(
+    finding_id: str, tenancy: tuple[TenantContext, Store] = Depends(request_tenancy)
+) -> dict:
+    ctx, store = tenancy
     try:
         store.get_finding(ctx.kb_id, finding_id)
     except Exception as exc:  # noqa: BLE001 — store raises on a missing finding
@@ -66,19 +76,18 @@ def delete_finding(project: str, kb: str, finding_id: str) -> dict:
 
 
 @router.get("/synopsis")
-def get_synopsis(project: str, kb: str) -> dict | None:
-    ctx, store = resolve_kb_or_404(project, kb)
+def get_synopsis(tenancy: tuple[TenantContext, Store] = Depends(request_tenancy)) -> dict | None:
+    ctx, store = tenancy
     return store.load_synopsis(ctx.kb_id)
 
 
 @router.get("/resume")
 async def resume(
-    project: str,
-    kb: str,
     query: str | None = None,
     depth: Literal["shallow", "normal", "deep"] = "normal",
+    tenancy: tuple[TenantContext, Store] = Depends(request_tenancy),
 ) -> JSONResponse:
-    ctx, store = resolve_kb_or_404(project, kb)
+    ctx, store = tenancy
     if query and not get_settings().openai_api_key:
         return JSONResponse(status_code=503, content={"error": "embeddings unavailable"})
     preamble, coverage = await select_preamble(
@@ -89,8 +98,10 @@ async def resume(
 
 
 @router.get("/backlog")
-async def backlog(project: str, kb: str, limit: int | None = None) -> JSONResponse:
-    ctx, store = resolve_kb_or_404(project, kb)
+async def backlog(
+    limit: int | None = None, tenancy: tuple[TenantContext, Store] = Depends(request_tenancy)
+) -> JSONResponse:
+    ctx, store = tenancy
     cfg = get_config().curation
     rows = await store.list_curation_topics(ctx.kb_id, limit=500)
     ranked = rank_backlog(rows or [], cfg, datetime.now(timezone.utc))
