@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import logging
 import sys
 import time
@@ -10,6 +11,8 @@ import time
 import jwt
 import pytest
 from fastapi import HTTPException
+
+from delapan.api.ratelimit import _HAVE_SLOWAPI
 
 SECRET = "test-jwt-secret"
 
@@ -330,6 +333,43 @@ def test_key_valid_token_buckets_by_sub():
     from delapan.api.ratelimit import _key
 
     assert _key(_rl_request(_token("user-42"))) == "user-42"
+
+
+@pytest.mark.skipif(not _HAVE_SLOWAPI, reason="slowapi not installed")
+def test_ratelimit_private_api_tripwire():
+    """`enforce_default_limit` (ratelimit.py) reaches into slowapi's private
+    surface — `Limiter._check_request_limit`, `_route_limits`,
+    `_dynamic_route_limits`, `_exempt_routes` — none of which are public API,
+    and slowapi carries no version ceiling in pyproject.toml (task-6b review
+    finding). If a dependency bump renames or drops one of these, the module
+    would either crash somewhere deep in slowapi with a confusing traceback,
+    or (per `_check_request_limit`'s `in_middleware=True` semantics, see
+    `enforce_default_limit`'s docstring) silently degrade to a no-op with no
+    other test signal until someone read the diff by hand. This fails loudly,
+    at the source, the moment any of them moves.
+
+    (The fifth private dependency this module has — Starlette setting
+    `scope["endpoint"]` during route dispatch — isn't hasattr-checkable the
+    same way; its disappearance already fails loudly via
+    `test_rate_limit_default_enforced_on_undecorated_route`, since
+    `enforce_default_limit` reads `request.scope.get("endpoint")` and quietly
+    returns on `None`, which would flip that test's 429 assertion.)"""
+    from delapan.api.ratelimit import limiter
+
+    for attr in (
+        "_exempt_routes",
+        "_route_limits",
+        "_dynamic_route_limits",
+        "_check_request_limit",
+    ):
+        assert hasattr(limiter, attr), f"slowapi Limiter lost private attribute {attr!r}"
+
+    # enforce_default_limit calls limiter._check_request_limit(request, handler, True)
+    # positionally — pin the parameter names/order that call shape assumes.
+    params = list(inspect.signature(limiter._check_request_limit).parameters)
+    assert params[:3] == ["request", "endpoint_func", "in_middleware"], (
+        f"Limiter._check_request_limit signature changed: {params!r}"
+    )
 
 
 def test_ratelimit_noop_when_slowapi_missing(monkeypatch, caplog):
