@@ -112,19 +112,44 @@ A FastAPI auth dependency reuses the proven cloud-MCP pieces:
 
 - **Config, never hardcoded:** `api.auth: none | supabase` in `config.yaml`
   (`DLP_API__AUTH`), default `none` — the local tier's behavior is
-  byte-identical to today. `api.cors_origins` (delapan.ai + localhost dev)
-  and rate-limit knobs live beside it.
+  byte-identical to today, and `api.auth` is a `Literal` so a typo raises
+  loudly at boot rather than silently falling into the auth-less branch.
+  Rate-limit knobs live beside it. `api.cors_origins` is **not yet
+  delivered** — CORS still reads `get_settings().cors_origins` (env-only,
+  `CORS_ORIGINS`) unioned with hardcoded localhost:5173 dev origins
+  (`delapan/api/main.py`); deferred to phase 2.
 - **Tenancy resolution:** cloud path resolves project/KB names within the
   token's org (the loopback name-scoped `resolve_kb_or_404` remains the
-  `auth: none` path). No tenant creation over HTTP.
-- **Enforcement line:** the engine talks to Postgres with the service key
-  (RLS-bypassing), so explicit org scoping in `Store` calls is the primary
-  wall; RLS is the second wall for everything connecting as `authenticated`
-  (SPA supabase-js: tracking, beta_members). Both are tested (§H).
+  `auth: none` path). Mostly no tenant creation over HTTP: the one deliberate
+  exception is `/explore` (`request_tenancy_creating`), which may create the
+  project/KB on demand — §D's guided first explore needs it. Every other
+  route (canvas, findings, graph, projects) stays non-creating, as does the
+  entire local (`auth: none`) path.
+- **Enforcement line:** the engine's Store implementations are NOT uniform
+  here — `SupabaseStore.__init__` (`delapan/store/supabase.py`) uses
+  `user_client(access_token)` (anon key + the caller's own JWT), so ordinary
+  reads/writes through `Store` are fully RLS-scoped: **RLS is the primary
+  wall on the data path**, which makes the `WITH CHECK` migrations and
+  `scripts/rls_audit.py` load-bearing, not defense-in-depth. (One read
+  depends entirely on the SELECT policy with no additional narrowing:
+  `store.get_finding_global(finding_id)` filters by id only.) The service
+  client (RLS-bypassing) appears only in two narrow, explicitly-filtered
+  spots outside `Store` proper — `tenancy._org_for` and
+  `auth.require_beta` — both scoped with an explicit `.eq("user_id", ...)`.
+  Both layers are tested (§H).
 - **Rate limiting:** slowapi in-process, keyed user-id then IP, budgeted per
-  route group (auth-adjacent, reads, pipeline actions). Supabase Auth's
-  configurable built-in limits cover the auth endpoints. Considered,
-  deferred: Cloudflare free tier in front of the domain.
+  route group (auth-adjacent, reads, pipeline actions), and scoped to
+  `api.auth == "supabase"` only — the local tier keeps zero rate ceiling, its
+  own binding constraint. Supabase Auth's configurable built-in limits cover
+  the auth endpoints. Considered, deferred: Cloudflare free tier in front of
+  the domain.
+
+### Known follow-ups
+
+Not fixed here, deliberately: `public.access_requests` has RLS enabled with
+zero policies — fail-closed for the `authenticated` role (deny-all),
+reachable only via the service role. Safe by default; revisit if the table is
+ever read from a user-scoped client.
 
 ## D. Frontend: landing, app, onboarding
 
