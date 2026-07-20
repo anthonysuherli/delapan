@@ -90,29 +90,29 @@ def _authed_tenancy(project: str, kb: str, request: Request, *, create: bool):
 
 def request_tenancy(project: str, kb: str, request: Request) -> tuple[TenantContext, Store]:
     """KB-scoped dependency: auth-none delegates untouched; supabase verifies + gates."""
-    if get_config().api.auth != "supabase":
-        return resolve_kb_or_404(project, kb)
-    return _authed_tenancy(project, kb, request, create=False)
+    if get_config().api.auth == "supabase":
+        return _authed_tenancy(project, kb, request, create=False)
+    return resolve_kb_or_404(project, kb)
 
 
 def request_tenancy_creating(project: str, kb: str, request: Request) -> tuple[TenantContext, Store]:
     """Explore-only variant: the cloud path may create the project/KB on demand
     (mirrors MCP explore; the dashboard's first-run explore needs it). Local
     HTTP stays non-creating."""
-    if get_config().api.auth != "supabase":
-        return resolve_kb_or_404(project, kb)
-    return _authed_tenancy(project, kb, request, create=True)
+    if get_config().api.auth == "supabase":
+        return _authed_tenancy(project, kb, request, create=True)
+    return resolve_kb_or_404(project, kb)
 
 
 def request_store(request: Request) -> Store:
     """Org-scoped store with no project/kb binding (projects/discovery routes)."""
-    if get_config().api.auth != "supabase":
-        from delapan.mcp.tenancy import resolve_store
+    if get_config().api.auth == "supabase":
+        from delapan.mcp.tenancy import resolve_store_for_token
 
-        return resolve_store()
-    from delapan.mcp.tenancy import resolve_store_for_token
+        authorization = request.headers.get("authorization")
+        user_id = verify_bearer(authorization)
+        require_beta(user_id)
+        return resolve_store_for_token(user_id, authorization.removeprefix("Bearer "))
+    from delapan.mcp.tenancy import resolve_store
 
-    authorization = request.headers.get("authorization")
-    user_id = verify_bearer(authorization)
-    require_beta(user_id)
-    return resolve_store_for_token(user_id, authorization.removeprefix("Bearer "))
+    return resolve_store()

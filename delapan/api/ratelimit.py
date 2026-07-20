@@ -111,9 +111,14 @@ def enforce_default_limit(request: Request) -> None:
     ``middleware.py``'s own call shape exactly.
 
     A no-op when slowapi isn't installed, so local-only installs (no
-    ``[cloud]`` extra) can still depend on this unconditionally.
+    ``[cloud]`` extra) can still depend on this unconditionally. Also a no-op
+    when ``api.auth != "supabase"``: the plan's binding constraint for the
+    local tier is byte-identical behavior to before this feature existed,
+    including no rate ceiling — a local install that happens to have the
+    ``[cloud]`` extra installed must not start 429ing at ``api.rate_limit_
+    default`` per IP just because slowapi is importable.
     """
-    if not _HAVE_SLOWAPI:
+    if not _HAVE_SLOWAPI or get_config().api.auth != "supabase":
         return
     handler = request.scope.get("endpoint")
     if handler is None:

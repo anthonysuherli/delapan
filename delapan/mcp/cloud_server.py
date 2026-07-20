@@ -116,17 +116,74 @@ async def delapan_projects() -> dict:
     return _projects_impl(store)
 
 
+class _CombinedApp:
+    """Dispatches each ASGI request to the MCP app or the REST app by
+    path-probing the MCP app's own route table (Starlette ``BaseRoute.matches``
+    — read-only, no side effects) rather than nesting one Starlette app inside
+    another via ``Mount``.
+
+    Why not just ``sapp.router.routes.append(Mount("/", app=rest_app))``
+    (the previous approach): ``mcp.streamable_http_app()`` returns a
+    ``Starlette`` instance whose ``AuthenticationMiddleware(BearerAuthBackend
+    (SupabaseTokenVerifier()))`` is app-wide — it wraps that Starlette
+    instance's ENTIRE router (``Starlette.build_middleware_stack`` wraps
+    ``self.router`` once, uniformly), regardless of how routes are appended to
+    it. Appending a REST catch-all ``Mount`` to that same router's route list
+    still routes REST requests through the MCP app's own middleware first,
+    forcing a synchronous GoTrue ``client.auth.get_user(token)`` round-trip
+    (plus a fresh ``create_client()``) in front of every Bearer-carrying
+    ``/api`` request — contradicting ``delapan/api/auth.py``'s "no GoTrue
+    round-trip per request" docstring, and blocking the event loop.
+
+    Why not two nested ``Mount``s either: FastMCP's own route lives at the
+    *absolute* path ``/mcp`` (``mcp.settings.streamable_http_path``), and a
+    Starlette ``Mount`` strips its own prefix before dispatching into the
+    child app — mounting the MCP app at ``Mount("/mcp", app=mcp_app)`` would
+    require a client to hit ``/mcp/mcp`` for the inner match to succeed,
+    breaking the exact ``/mcp`` URL the live claude.ai connector uses.
+    ``Mount("/", app=mcp_app)`` avoids that but then swallows every path
+    (its compiled regex matches any string), so the REST app would never
+    be reached.
+
+    This class sidesteps both: it probes ``mcp_app.routes`` — via each
+    route's own ``.matches(scope)`` — to decide ownership, then calls
+    whichever app owns the request directly (unmounted, full pass-through),
+    so neither app's own path scheme or middleware stack needs to change.
+    """
+
+    def __init__(self, mcp_app, rest_app) -> None:
+        self._mcp_app = mcp_app
+        self._rest_app = rest_app
+
+    async def __call__(self, scope, receive, send) -> None:
+        # Lifespan: only the MCP app owns startup/shutdown work (the
+        # streamable-http session manager); the REST app registers none.
+        if scope["type"] == "lifespan" or self._is_mcp_request(scope):
+            await self._mcp_app(scope, receive, send)
+        else:
+            await self._rest_app(scope, receive, send)
+
+    def _is_mcp_request(self, scope) -> bool:
+        from starlette.routing import Match
+
+        for route in self._mcp_app.routes:
+            match, _ = route.matches(scope)
+            if match != Match.NONE:
+                return True
+        return False
+
+
 def build_combined_app():
     """The Fly-facing ASGI app: FastMCP's streamable-http app (MCP path
-    unchanged — the claude.ai connector URL keeps working) with the REST
-    /api + /health mounted at root, catch-all last."""
-    from starlette.routing import Mount
-
+    unchanged — the claude.ai connector URL keeps working, and its own
+    Bearer-auth middleware stays scoped to /mcp + its auth-metadata routes)
+    dispatched alongside the REST /api + /health app, which sits entirely
+    outside that middleware — see ``_CombinedApp`` for why a plain ``Mount``
+    can't do this."""
     from delapan.api.main import app as rest_app
 
-    sapp = mcp.streamable_http_app()
-    sapp.router.routes.append(Mount("/", app=rest_app))
-    return sapp
+    mcp_app = mcp.streamable_http_app()
+    return _CombinedApp(mcp_app, rest_app)
 
 
 def main() -> None:

@@ -9,6 +9,7 @@ create table if not exists public.beta_members (
 
 alter table public.beta_members enable row level security;
 
+drop policy if exists "beta members read own row" on public.beta_members;
 create policy "beta members read own row"
   on public.beta_members for select to authenticated
   using ((select auth.uid()) = user_id);
