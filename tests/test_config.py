@@ -100,3 +100,17 @@ def test_curation_env_override(monkeypatch):
         assert cfg.curation.enabled is False
     finally:
         get_config.cache_clear()
+
+
+def test_api_config_defaults_and_env_override(monkeypatch):
+    from delapan.core.config import get_config
+
+    get_config.cache_clear()
+    assert get_config().api.auth == "none"
+    assert get_config().api.rate_limit_default == "120/minute"
+    assert get_config().api.rate_limit_pipeline == "12/hour"
+
+    monkeypatch.setenv("DLP_API__AUTH", "supabase")
+    get_config.cache_clear()
+    assert get_config().api.auth == "supabase"
+    get_config.cache_clear()

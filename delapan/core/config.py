@@ -431,10 +431,19 @@ class PromptsConfig(BaseModel):
     )
 
 
+class ApiConfig(BaseModel):
+    """The HTTP /api surface — auth mode and rate limits."""
+
+    auth: str = "none"  # "none" (local, auth-less) | "supabase" (bearer JWT + beta gate)
+    rate_limit_default: str = "120/minute"  # per user-or-IP, all routes
+    rate_limit_pipeline: str = "12/hour"  # explore/canvas POSTs (LLM + search spend)
+
+
 class AppConfig(BaseModel):
     """Aggregate of all tunable sections."""
 
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    api: ApiConfig = Field(default_factory=ApiConfig)
     canvas: CanvasConfig = Field(default_factory=CanvasConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     tiers: TiersConfig = Field(default_factory=TiersConfig)
