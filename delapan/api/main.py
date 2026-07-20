@@ -17,6 +17,8 @@ allowance). Binds loopback only; the cloud tier's full HTTP surface (/agent,
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -49,7 +51,10 @@ try:  # slowapi ships in the [cloud] extra — local-only installs no-op instead
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(SlowAPIMiddleware)
 except ImportError:
-    pass
+    logging.getLogger(__name__).warning(
+        "slowapi not installed — rate limiting is DISABLED (install the [cloud] extra "
+        "to enable it)"
+    )
 
 app.include_router(health_router)
 app.include_router(projects_router)

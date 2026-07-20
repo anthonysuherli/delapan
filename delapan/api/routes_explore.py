@@ -126,7 +126,7 @@ async def _events(ctx: TenantContext, store: Store, body: ExploreBody) -> AsyncI
 
 
 @router.post("/explore")
-@limiter.limit(pipeline_limit)
+@limiter.limit(pipeline_limit, override_defaults=False)
 async def explore(
     request: Request,
     body: ExploreBody,
