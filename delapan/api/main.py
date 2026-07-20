@@ -21,6 +21,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from delapan.api.health import router as health_router
+from delapan.api.ratelimit import limiter
 from delapan.api.routes_canvas import router as canvas_router
 from delapan.api.routes_explore import router as explore_router
 from delapan.api.routes_findings import router as findings_router
@@ -38,6 +39,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+try:  # slowapi ships in the [cloud] extra — local-only installs no-op instead
+    from slowapi import _rate_limit_exceeded_handler
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.middleware import SlowAPIMiddleware
+
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
+except ImportError:
+    pass
+
 app.include_router(health_router)
 app.include_router(projects_router)
 app.include_router(kg_router)

@@ -163,3 +163,34 @@ def test_routes_403_without_beta_membership(supabase_mode_client, monkeypatch):
         "/api/projects", headers={"Authorization": f"Bearer {_token('u-no-beta')}"}
     )
     assert r.status_code == 403
+
+
+def test_rate_limit_pipeline_429(supabase_mode_client, monkeypatch):
+    import delapan.api.auth as auth_mod
+    import delapan.api.routes_explore as explore_mod
+    import delapan.mcp.tenancy as tenancy_mod
+
+    monkeypatch.setattr(auth_mod, "_service_client", lambda: _FakeService([{"user_id": "u1"}]))
+    # supabase_mode_client runs the local SQLite store (hermetic), but tenancy
+    # resolution for api.auth=="supabase" always takes the cloud-token path
+    # (resolve_tenant_for_token), which looks up org membership via a real
+    # Supabase service client. Stub the org lookup only — org_id is discarded
+    # by the local backend's get_store() anyway.
+    monkeypatch.setattr(tenancy_mod, "_org_for", lambda user_id: "org-test")
+    # Force the pipeline to short-circuit before touching real search/LLM
+    # providers — this test only cares that the SECOND request is rate
+    # limited, not that exploration succeeds.
+    monkeypatch.setattr(explore_mod, "missing_pipeline_keys", lambda: ["AI_GATEWAY_API_KEY"])
+    monkeypatch.setenv("DLP_API__RATE_LIMIT_PIPELINE", "1/hour")
+    from delapan.core.config import get_config
+
+    get_config.cache_clear()
+    headers = {"Authorization": f"Bearer {_token('u1')}"}
+    # Two POSTs: the second must be limited regardless of what the first returns.
+    supabase_mode_client.post("/api/projects/p/kbs/k/explore", json={"prompt": "x"}, headers=headers)
+    r = supabase_mode_client.post(
+        "/api/projects/p/kbs/k/explore", json={"prompt": "x"}, headers=headers
+    )
+    assert r.status_code == 429
+    assert "retry-after" in {k.lower() for k in r.headers}
+    get_config.cache_clear()
