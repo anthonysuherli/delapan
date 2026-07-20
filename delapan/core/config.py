@@ -435,7 +435,7 @@ class ApiConfig(BaseModel):
     """The HTTP /api surface — auth mode and rate limits."""
 
     auth: str = "none"  # "none" (local, auth-less) | "supabase" (bearer JWT + beta gate)
-    rate_limit_default: str = "120/minute"  # per user-or-IP, all routes
+    rate_limit_default: str = "120/minute"  # per user-or-IP, all /api routes (not /health)
     rate_limit_pipeline: str = "12/hour"  # explore/canvas POSTs (LLM + search spend)
 
 

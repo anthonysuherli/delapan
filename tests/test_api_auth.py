@@ -1,4 +1,5 @@
 """Auth-layer tests: forged HS256 JWTs against a test secret — hermetic."""
+
 from __future__ import annotations
 
 import importlib
@@ -13,8 +14,9 @@ from fastapi import HTTPException
 SECRET = "test-jwt-secret"
 
 
-def _token(sub: str = "user-a", *, aud: str = "authenticated", exp_delta: int = 3600,
-           secret: str = SECRET) -> str:
+def _token(
+    sub: str = "user-a", *, aud: str = "authenticated", exp_delta: int = 3600, secret: str = SECRET
+) -> str:
     return jwt.encode(
         {"sub": sub, "aud": aud, "exp": int(time.time()) + exp_delta}, secret, algorithm="HS256"
     )
@@ -176,6 +178,48 @@ def test_routes_403_without_beta_membership(supabase_mode_client, monkeypatch):
     assert r.status_code == 403
 
 
+@pytest.fixture()
+def local_client(monkeypatch, tmp_path):
+    """TestClient with api.auth=none (the default) — isolates default-limit
+    enforcement from the beta-gate auth path, which 401s/403s before the
+    limiter would ever run and would mask what this fixture is for."""
+    monkeypatch.setenv("DELAPAN_BACKEND", "local")
+    monkeypatch.setenv("DELAPAN_DB_PATH", str(tmp_path / "api.db"))
+    from delapan.core.config import get_config, get_settings
+
+    get_settings.cache_clear()
+    get_config.cache_clear()
+    from fastapi.testclient import TestClient
+
+    from delapan.api.main import app
+    from delapan.api.ratelimit import limiter as _limiter
+
+    if hasattr(_limiter, "reset"):
+        _limiter.reset()
+    yield TestClient(app)
+    if hasattr(_limiter, "reset"):
+        _limiter.reset()
+    get_settings.cache_clear()
+    get_config.cache_clear()
+
+
+def test_rate_limit_default_enforced_on_undecorated_route(local_client, monkeypatch):
+    """GET /api/projects carries no `@limiter.limit(...)` decorator of its own —
+    it must still be bound by `api.rate_limit_default`. This is the app-wide
+    guarantee `SlowAPIMiddleware` was supposed to provide (see ratelimit.py's
+    module docstring and main.py) but can't, because FastAPI 0.139's
+    `include_router` no longer flattens child routes into `app.routes`."""
+    monkeypatch.setenv("DLP_API__RATE_LIMIT_DEFAULT", "1/hour")
+    from delapan.core.config import get_config
+
+    get_config.cache_clear()
+    local_client.get("/api/projects")
+    r = local_client.get("/api/projects")
+    assert r.status_code == 429
+    assert "retry-after" in {k.lower() for k in r.headers}
+    get_config.cache_clear()
+
+
 def test_rate_limit_pipeline_429(supabase_mode_client, monkeypatch):
     import delapan.api.auth as auth_mod
     import delapan.api.routes_explore as explore_mod
@@ -198,7 +242,9 @@ def test_rate_limit_pipeline_429(supabase_mode_client, monkeypatch):
     get_config.cache_clear()
     headers = {"Authorization": f"Bearer {_token('u1')}"}
     # Two POSTs: the second must be limited regardless of what the first returns.
-    supabase_mode_client.post("/api/projects/p/kbs/k/explore", json={"prompt": "x"}, headers=headers)
+    supabase_mode_client.post(
+        "/api/projects/p/kbs/k/explore", json={"prompt": "x"}, headers=headers
+    )
     r = supabase_mode_client.post(
         "/api/projects/p/kbs/k/explore", json={"prompt": "x"}, headers=headers
     )
@@ -224,7 +270,9 @@ def test_rate_limit_default_also_applies_to_explore(supabase_mode_client, monkey
 
     get_config.cache_clear()
     headers = {"Authorization": f"Bearer {_token('u1')}"}
-    supabase_mode_client.post("/api/projects/p/kbs/k/explore", json={"prompt": "x"}, headers=headers)
+    supabase_mode_client.post(
+        "/api/projects/p/kbs/k/explore", json={"prompt": "x"}, headers=headers
+    )
     r = supabase_mode_client.post(
         "/api/projects/p/kbs/k/explore", json={"prompt": "x"}, headers=headers
     )
@@ -258,13 +306,16 @@ def test_key_forged_sub_falls_back_to_ip_bucket():
     calls after `Depends(request_tenancy_creating)` resolves — so a
     garbage-signed token always 401s at real auth (Task 2's verify_bearer)
     before the rate limiter ever runs (see ratelimit.py's module docstring /
-    the "slowapi mechanics" note in task-6-report.md). Undecorated routes would
-    otherwise hit the check earlier via SlowAPIMiddleware, but this FastAPI
-    version (0.139) no longer flattens `include_router`-added routes into
-    `app.routes`, so slowapi's `_find_route_handler` can't find them and
-    `_should_exempt` treats every included route as exempt — a pre-existing
-    slowapi/FastAPI incompatibility, unrelated to this task, that leaves
-    `rate_limit_default` unenforced except on routes explicitly decorated."""
+    the "slowapi mechanics" note in task-6-report.md). Undecorated routes are
+    checked instead by the `enforce_default_limit` dependency (also in
+    ratelimit.py), since `SlowAPIMiddleware` can't do it: this FastAPI version
+    (0.139) no longer flattens `include_router`-added routes into `app.routes`,
+    so slowapi's `_find_route_handler` can't find them and `_should_exempt`
+    treats every included route as exempt. But those undecorated routes have
+    no auth dependency ahead of the limiter the way /explore does, so a forged
+    token reaching one of them would hit `_key` for real — this test still
+    isolates `_key`'s behavior at the unit level rather than relying on a
+    specific route's dependency ordering."""
     from delapan.api.ratelimit import _key
 
     tok_a = _token("forged-sub-a", secret="wrong-secret")
@@ -300,8 +351,7 @@ def test_ratelimit_noop_when_slowapi_missing(monkeypatch, caplog):
         assert main_mod.app is not None
         assert not hasattr(main_mod.app.state, "limiter")
         assert any(
-            "slowapi not installed" in r.message and "DISABLED" in r.message
-            for r in caplog.records
+            "slowapi not installed" in r.message and "DISABLED" in r.message for r in caplog.records
         )
     finally:
         # sys.modules["slowapi"] reverts to the real module on undo; reload the

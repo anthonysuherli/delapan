@@ -17,13 +17,11 @@ allowance). Binds loopback only; the cloud tier's full HTTP surface (/agent,
 
 from __future__ import annotations
 
-import logging
-
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from delapan.api.health import router as health_router
-from delapan.api.ratelimit import limiter
+from delapan.api.ratelimit import enforce_default_limit, limiter
 from delapan.api.routes_canvas import router as canvas_router
 from delapan.api.routes_explore import router as explore_router
 from delapan.api.routes_findings import router as findings_router
@@ -45,23 +43,25 @@ app.add_middleware(
 try:  # slowapi ships in the [cloud] extra — local-only installs no-op instead
     from slowapi import _rate_limit_exceeded_handler
     from slowapi.errors import RateLimitExceeded
-    from slowapi.middleware import SlowAPIMiddleware
 
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-    app.add_middleware(SlowAPIMiddleware)
+    # No SlowAPIMiddleware here: on this FastAPI/slowapi pairing it enforces
+    # nothing (`include_router` wraps child routes in a `_IncludedRouter` with
+    # no `.endpoint`, so slowapi's `app.routes` walk never finds a handler and
+    # treats every route as exempt). `enforce_default_limit` below is the
+    # replacement — see its docstring in ratelimit.py for the full chain.
+    # ImportError is already logged once, in ratelimit.py's own guard.
 except ImportError:
-    logging.getLogger(__name__).warning(
-        "slowapi not installed — rate limiting is DISABLED (install the [cloud] extra "
-        "to enable it)"
-    )
+    pass
 
+_API_DEP = Depends(enforce_default_limit)
 app.include_router(health_router)
-app.include_router(projects_router)
-app.include_router(kg_router)
-app.include_router(findings_router)
-app.include_router(explore_router)
-app.include_router(canvas_router)
+app.include_router(projects_router, dependencies=[_API_DEP])
+app.include_router(kg_router, dependencies=[_API_DEP])
+app.include_router(findings_router, dependencies=[_API_DEP])
+app.include_router(explore_router, dependencies=[_API_DEP])
+app.include_router(canvas_router, dependencies=[_API_DEP])
 
 
 def main() -> None:
