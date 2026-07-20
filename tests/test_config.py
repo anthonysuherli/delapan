@@ -114,3 +114,20 @@ def test_api_config_defaults_and_env_override(monkeypatch):
     get_config.cache_clear()
     assert get_config().api.auth == "supabase"
     get_config.cache_clear()
+
+
+def test_api_auth_invalid_value_raises(monkeypatch):
+    """`api.auth` is a Literal — a typo (e.g. a misconfigured DLP_API__AUTH)
+    must raise loudly at boot, not silently fall into the "not supabase" =>
+    auth-none branch, which on the cloud deploy would serve anonymous
+    requests through the owner's own MCP-authenticated tenancy path."""
+    import pydantic
+    import pytest
+
+    from delapan.core.config import get_config
+
+    monkeypatch.setenv("DLP_API__AUTH", "supbase")  # typo
+    get_config.cache_clear()
+    with pytest.raises(pydantic.ValidationError):
+        get_config()
+    get_config.cache_clear()

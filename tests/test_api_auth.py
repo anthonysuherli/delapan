@@ -206,18 +206,40 @@ def local_client(monkeypatch, tmp_path):
     get_config.cache_clear()
 
 
-def test_rate_limit_default_enforced_on_undecorated_route(local_client, monkeypatch):
-    """GET /api/projects carries no `@limiter.limit(...)` decorator of its own —
-    it must still be bound by `api.rate_limit_default`. This is the app-wide
-    guarantee `SlowAPIMiddleware` was supposed to provide (see ratelimit.py's
-    module docstring and main.py) but can't, because FastAPI 0.139's
-    `include_router` no longer flattens child routes into `app.routes`."""
+def test_rate_limit_default_not_enforced_in_none_mode(local_client, monkeypatch):
+    """`enforce_default_limit` is a no-op unless `api.auth == "supabase"` — the
+    plan's binding constraint is byte-identical local (`api.auth == "none"`)
+    behavior, including no rate ceiling, even when the `[cloud]` extra (and
+    therefore slowapi) happens to be installed."""
     monkeypatch.setenv("DLP_API__RATE_LIMIT_DEFAULT", "1/hour")
     from delapan.core.config import get_config
 
     get_config.cache_clear()
     local_client.get("/api/projects")
     r = local_client.get("/api/projects")
+    assert r.status_code == 200
+    get_config.cache_clear()
+
+
+def test_rate_limit_default_enforced_in_supabase_mode(supabase_mode_client, monkeypatch):
+    """Counterpart: with `api.auth == "supabase"`, GET /api/projects — which
+    carries no `@limiter.limit(...)` decorator of its own — is still bound by
+    `api.rate_limit_default`. This is the app-wide guarantee `SlowAPIMiddleware`
+    was supposed to provide (see ratelimit.py's module docstring and main.py)
+    but can't, because FastAPI 0.139's `include_router` no longer flattens
+    child routes into `app.routes`."""
+    import delapan.api.auth as auth_mod
+    import delapan.mcp.tenancy as tenancy_mod
+
+    monkeypatch.setattr(auth_mod, "_service_client", lambda: _FakeService([{"user_id": "u1"}]))
+    monkeypatch.setattr(tenancy_mod, "_org_for", lambda user_id: "org-test")
+    monkeypatch.setenv("DLP_API__RATE_LIMIT_DEFAULT", "1/hour")
+    from delapan.core.config import get_config
+
+    get_config.cache_clear()
+    headers = {"Authorization": f"Bearer {_token('u1')}"}
+    supabase_mode_client.get("/api/projects", headers=headers)
+    r = supabase_mode_client.get("/api/projects", headers=headers)
     assert r.status_code == 429
     assert "retry-after" in {k.lower() for k in r.headers}
     get_config.cache_clear()
@@ -250,6 +272,40 @@ def test_rate_limit_pipeline_429(supabase_mode_client, monkeypatch):
     )
     r = supabase_mode_client.post(
         "/api/projects/p/kbs/k/explore", json={"prompt": "x"}, headers=headers
+    )
+    assert r.status_code == 429
+    assert "retry-after" in {k.lower() for k in r.headers}
+    get_config.cache_clear()
+
+
+def test_rate_limit_pipeline_429_canvas_search(supabase_mode_client, monkeypatch):
+    """Canvas routes run the same spend path as /explore (embeddings → Tavily
+    → LLM) but previously carried only the generous app-wide default —
+    mirrors test_rate_limit_pipeline_429 for POST /canvas/search."""
+    import delapan.api.auth as auth_mod
+    import delapan.api.routes_canvas as canvas_mod
+    import delapan.mcp.tenancy as tenancy_mod
+    from delapan.store import get_store
+
+    monkeypatch.setattr(auth_mod, "_service_client", lambda: _FakeService([{"user_id": "u1"}]))
+    monkeypatch.setattr(tenancy_mod, "_org_for", lambda user_id: "org-test")
+    monkeypatch.setattr(canvas_mod, "missing_pipeline_keys", lambda: ["AI_GATEWAY_API_KEY"])
+    monkeypatch.setenv("DLP_API__RATE_LIMIT_PIPELINE", "1/hour")
+    from delapan.core.config import get_config
+
+    get_config.cache_clear()
+    # canvas/search is non-creating (request_tenancy, not the *_creating
+    # variant /explore uses) — the KB must already exist or every call 404s
+    # before ever reaching the rate limiter.
+    store = get_store()
+    org_id, project_id = store.resolve_project("p", create=True)
+    store.resolve_kb(org_id, project_id, "k", create=True)
+    headers = {"Authorization": f"Bearer {_token('u1')}"}
+    supabase_mode_client.post(
+        "/api/projects/p/kbs/k/canvas/search", json={"prompt": "x"}, headers=headers
+    )
+    r = supabase_mode_client.post(
+        "/api/projects/p/kbs/k/canvas/search", json={"prompt": "x"}, headers=headers
     )
     assert r.status_code == 429
     assert "retry-after" in {k.lower() for k in r.headers}
