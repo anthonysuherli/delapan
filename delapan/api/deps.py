@@ -31,11 +31,15 @@ def resolve_kb_or_404(project: str, kb: str) -> tuple[TenantContext, Store]:
 
 
 def missing_pipeline_keys() -> list[str]:
-    """Credentials the research pipeline needs end-to-end (search + LLM + embeddings)."""
+    """Credentials the research pipeline needs end-to-end (search + LLM + embeddings).
+
+    The AI Gateway carries both the LLM calls and the embeddings, so it is the
+    only provider credential required; OPENAI_API_KEY is just the embeddings
+    fallback when no gateway key is set, never a requirement.
+    """
     s = get_settings()
     required = (
         ("TAVILY_API_KEY", s.tavily_api_key),
         ("AI_GATEWAY_API_KEY", s.ai_gateway_api_key),
-        ("OPENAI_API_KEY", s.openai_api_key),
     )
     return [name for name, value in required if not value]

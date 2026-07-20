@@ -148,8 +148,9 @@ pytest && ruff check .
 - Concepts, drift, deepen, bridges, monitoring, user-profile, research reports, and the broader MCP tool surface.
 - Store-route or gate the remaining cloud-coupled surfaces (`userprofile`, generic `knowledge_graph/builder`) — currently `[cloud]`-gated at call-time.
 
-LLM-backed features (synopsis rebuild, exploration) need `ANTHROPIC_API_KEY` /
-`AI_GATEWAY_API_KEY` / `OPENAI_API_KEY`; browse/tenant/persistence work without them.
+LLM-backed features need keys — exploration: `TAVILY_API_KEY` + `AI_GATEWAY_API_KEY`
+(the gateway covers LLM calls and embeddings; `OPENAI_API_KEY` is only the embeddings
+fallback), synopsis rebuild: `ANTHROPIC_API_KEY`. Browse/tenant/persistence work without them.
 
 ## License
 

@@ -19,7 +19,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DELAPAN_BACKEND", "local")
     monkeypatch.setenv("DELAPAN_DB_PATH", str(tmp_path / "api.db"))
     for key in ("OPENAI_API_KEY", "TAVILY_API_KEY", "AI_GATEWAY_API_KEY", "ANTHROPIC_API_KEY"):
-        monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv(key, "")  # force-empty, not delenv: the repo .env sits below process env
     from delapan.core.config import get_settings
 
     get_settings.cache_clear()
@@ -86,7 +86,7 @@ def test_canvas_search_streams_candidates_and_answer_without_persisting(
     client, kb, monkeypatch
 ):
     store, kb_id = kb
-    for key in ("TAVILY_API_KEY", "AI_GATEWAY_API_KEY", "OPENAI_API_KEY"):
+    for key in ("TAVILY_API_KEY", "AI_GATEWAY_API_KEY"):
         monkeypatch.setenv(key, "fake")
     from delapan.core.config import get_settings
 
@@ -135,7 +135,7 @@ def test_canvas_search_streams_candidates_and_answer_without_persisting(
 
 
 def test_canvas_search_provider_failure_emits_error_and_fails_row(client, kb, monkeypatch):
-    for key in ("TAVILY_API_KEY", "AI_GATEWAY_API_KEY", "OPENAI_API_KEY"):
+    for key in ("TAVILY_API_KEY", "AI_GATEWAY_API_KEY"):
         monkeypatch.setenv(key, "fake")
     from delapan.core.config import get_settings
 
@@ -164,7 +164,7 @@ def test_canvas_search_provider_failure_emits_error_and_fails_row(client, kb, mo
 
 
 def test_canvas_search_grounding_failure_emits_error(client, kb, monkeypatch):
-    for key in ("TAVILY_API_KEY", "AI_GATEWAY_API_KEY", "OPENAI_API_KEY"):
+    for key in ("TAVILY_API_KEY", "AI_GATEWAY_API_KEY"):
         monkeypatch.setenv(key, "fake")
     from delapan.core.config import get_settings
 

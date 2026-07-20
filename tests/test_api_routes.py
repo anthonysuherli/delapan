@@ -12,7 +12,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DELAPAN_BACKEND", "local")
     monkeypatch.setenv("DELAPAN_DB_PATH", str(tmp_path / "api.db"))
     for key in ("OPENAI_API_KEY", "TAVILY_API_KEY", "AI_GATEWAY_API_KEY", "ANTHROPIC_API_KEY"):
-        monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv(key, "")  # force-empty, not delenv: the repo .env sits below process env
     from delapan.core.config import get_settings
 
     get_settings.cache_clear()
@@ -246,6 +246,18 @@ def test_explore_missing_keys_emits_sse_error(client, kb):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/event-stream")
     assert '"phase": "error"' in r.text and "missing required keys" in r.text
+
+
+def test_missing_pipeline_keys_gateway_setup_needs_no_openai(client, monkeypatch):
+    """Tavily + AI Gateway is the full credential set; OPENAI_API_KEY stays optional."""
+    from delapan.api.deps import missing_pipeline_keys
+    from delapan.core.config import get_settings
+
+    assert missing_pipeline_keys() == ["TAVILY_API_KEY", "AI_GATEWAY_API_KEY"]
+    for key in ("TAVILY_API_KEY", "AI_GATEWAY_API_KEY"):
+        monkeypatch.setenv(key, "fake")
+    get_settings.cache_clear()
+    assert missing_pipeline_keys() == []
 
 
 def test_findings_route_returns_total(client, kb):
