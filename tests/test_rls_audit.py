@@ -2,7 +2,36 @@
 
 from __future__ import annotations
 
-from scripts.rls_audit import evaluate
+from scripts.rls_audit import TENANT_TABLES, evaluate
+
+# Tables missing from the original 11-table TENANT_TABLES list (2026-07-20 blind
+# spot: the public schema has 29 tables, not 11). kg_communities is the one that
+# actually bit us — its RLS was fully disabled and the narrower list never caught
+# it. Regression-test the whole set so it can't silently shrink back.
+_FORMERLY_BLIND_SPOT_TABLES = {
+    "kg_communities",
+    "orgs",
+    "org_members",
+    "api_keys",
+    "api_key_usage",
+    "chat_threads",
+    "chat_messages",
+    "uploads",
+    "kb_synopsis",
+    "kb_concepts",
+    "drift_baselines",
+    "bridges",
+    "deepen_runs",
+    "user_kb_relevance",
+    "access_events",
+    "access_rollup_daily",
+    "access_requests",
+    "duet_reports",
+}
+
+
+def test_tenant_tables_covers_former_blind_spots():
+    assert _FORMERLY_BLIND_SPOT_TABLES <= TENANT_TABLES
 
 
 def _table(name, rls=True):

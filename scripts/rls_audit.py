@@ -24,6 +24,32 @@ TENANT_TABLES = {
     "beta_members",
     "tracking_initiatives",
     "tracking_backlog",
+    # org/user identity — 2026-07-20 widen (public schema has 29 tables, not 11)
+    "orgs",
+    "org_members",
+    # api keys
+    "api_keys",
+    "api_key_usage",
+    # chat
+    "chat_threads",
+    "chat_messages",
+    # uploads
+    "uploads",
+    # kb feature tables
+    "kb_synopsis",
+    "kb_concepts",
+    "drift_baselines",
+    "bridges",
+    "deepen_runs",
+    "user_kb_relevance",
+    # access audit
+    "access_events",
+    "access_rollup_daily",
+    "access_requests",
+    # the blind spot that started this widening: RLS was fully disabled
+    "kg_communities",
+    # duet
+    "duet_reports",
 }
 _SCOPE_MARKERS = ("org_id", "auth.uid()")
 
