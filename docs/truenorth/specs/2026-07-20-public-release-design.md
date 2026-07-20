@@ -138,11 +138,15 @@ A FastAPI auth dependency reuses the proven cloud-MCP pieces:
   `auth.require_beta` — both scoped with an explicit `.eq("user_id", ...)`.
   Both layers are tested (§H).
 - **Rate limiting:** slowapi in-process, keyed user-id then IP, budgeted per
-  route group (auth-adjacent, reads, pipeline actions), and scoped to
-  `api.auth == "supabase"` only — the local tier keeps zero rate ceiling, its
-  own binding constraint. Supabase Auth's configurable built-in limits cover
-  the auth endpoints. Considered, deferred: Cloudflare free tier in front of
-  the domain.
+  route group (auth-adjacent, reads, pipeline actions), enforced through two
+  separate mechanisms — the `@limiter.limit(...)` decorator on the three
+  pipeline routes, and the `enforce_default_limit` dependency for everything
+  else — that each independently no-op unless `api.auth == "supabase"` (the
+  decorator via `exempt_when=_local_tier_exempt`, `ratelimit.py`). Both must
+  agree for the local tier to keep zero rate ceiling, its own binding
+  constraint. Supabase Auth's configurable built-in limits cover the auth
+  endpoints. Considered, deferred: Cloudflare free tier in front of the
+  domain.
 
 ### Known follow-ups
 

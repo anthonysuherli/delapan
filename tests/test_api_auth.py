@@ -312,6 +312,36 @@ def test_rate_limit_pipeline_429_canvas_search(supabase_mode_client, monkeypatch
     get_config.cache_clear()
 
 
+def test_rate_limit_pipeline_not_enforced_in_none_mode_canvas_search(local_client, monkeypatch):
+    """Counterpart to test_rate_limit_pipeline_429_canvas_search: the
+    ``@limiter.limit(pipeline_limit, ...)`` decorator on POST /canvas/search
+    is a separate enforcement path from ``enforce_default_limit`` and never
+    consulted ``api.auth`` on its own — so a local install (``api.auth ==
+    "none"``) with a tight ``rate_limit_pipeline`` used to 429 anyway,
+    breaking local-tier parity. ``exempt_when=_local_tier_exempt`` on the
+    decorator fixes that; this proves repeated calls stay 200 in local mode
+    even with a 1/hour pipeline limit."""
+    import delapan.api.routes_canvas as canvas_mod
+    from delapan.store import get_store
+
+    monkeypatch.setattr(canvas_mod, "missing_pipeline_keys", lambda: ["AI_GATEWAY_API_KEY"])
+    monkeypatch.setenv("DLP_API__RATE_LIMIT_PIPELINE", "1/hour")
+    from delapan.core.config import get_config
+
+    get_config.cache_clear()
+    # canvas/search is non-creating (request_tenancy, not the *_creating
+    # variant /explore uses) — the KB must already exist or every call 404s
+    # before ever reaching the rate limiter.
+    store = get_store()
+    org_id, project_id = store.resolve_project("p", create=True)
+    store.resolve_kb(org_id, project_id, "k", create=True)
+    r1 = local_client.post("/api/projects/p/kbs/k/canvas/search", json={"prompt": "x"})
+    r2 = local_client.post("/api/projects/p/kbs/k/canvas/search", json={"prompt": "x"})
+    assert r1.status_code != 429
+    assert r2.status_code != 429
+    get_config.cache_clear()
+
+
 def test_rate_limit_default_also_applies_to_explore(supabase_mode_client, monkeypatch):
     """`@limiter.limit(pipeline_limit, override_defaults=False)` must not let
     /explore escape the app-wide default — both limits apply, and the tighter

@@ -10,8 +10,12 @@ local-only install (``pip install delapan[local]``) must still import this
 module cleanly — ``routes_explore.py`` always imports it — so the slowapi
 import is guarded; absent it, `limiter` degrades to a no-op whose `.limit(...)`
 decorator is the identity function (logged as a warning — rate limiting is
-DISABLED). Generous config defaults (120/minute, 12/hour) mean the local tier
-never meaningfully hits the buckets either way.
+DISABLED). Two independent mechanisms enforce limits — the ``@limiter.limit
+(...)`` decorator (pipeline routes) and the ``enforce_default_limit``
+dependency (everything else) — and both are no-ops whenever ``api.auth !=
+"supabase"``, so the local tier has zero rate ceiling regardless of the
+configured limit values (see ``_local_tier_exempt`` and
+``enforce_default_limit`` below).
 """
 
 from __future__ import annotations
@@ -82,6 +86,25 @@ def pipeline_limit() -> str:
     return get_config().api.rate_limit_pipeline
 
 
+def _local_tier_exempt() -> bool:
+    """``exempt_when`` for the three ``@limiter.limit(pipeline_limit, ...)``
+    decorators (routes_explore.py, routes_canvas.py). The decorator is a
+    separate enforcement path from ``enforce_default_limit`` below and never
+    consulted ``api.auth`` on its own — slowapi called ``Limiter._check_
+    request_limit`` straight from its wrapper regardless of tier, so a local
+    install (``api.auth != "supabase"``) with a tight ``rate_limit_pipeline``
+    would still 429, breaking the same local-tier parity guarantee
+    ``enforce_default_limit`` exists to protect. Mirrors that function's own
+    ``api.auth != "supabase"`` check so both mechanisms agree.
+
+    Reads ``get_config()`` fresh on every call rather than at decoration time
+    — slowapi calls ``exempt_when`` per request (see ``Limit.is_exempt`` in
+    ``slowapi/wrappers.py``), so this must stay lazy or a config reload
+    (tests reset it via ``get_config.cache_clear()``) would never take effect.
+    """
+    return get_config().api.auth != "supabase"
+
+
 def enforce_default_limit(request: Request) -> None:
     """FastAPI dependency: applies ``api.rate_limit_default`` to any route that
     has no ``@limiter.limit(...)`` decorator of its own.
@@ -116,7 +139,11 @@ def enforce_default_limit(request: Request) -> None:
     local tier is byte-identical behavior to before this feature existed,
     including no rate ceiling — a local install that happens to have the
     ``[cloud]`` extra installed must not start 429ing at ``api.rate_limit_
-    default`` per IP just because slowapi is importable.
+    default`` per IP just because slowapi is importable. This dependency only
+    covers routes with no ``@limiter.limit(...)`` decorator of their own —
+    the three pipeline routes carry that decorator instead, so they get the
+    same ``api.auth != "supabase"`` exemption via ``exempt_when=
+    _local_tier_exempt`` on the decorator itself (see that function above).
     """
     if not _HAVE_SLOWAPI or get_config().api.auth != "supabase":
         return

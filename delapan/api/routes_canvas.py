@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 from delapan.api.auth import request_tenancy
 from delapan.api.deps import missing_pipeline_keys
-from delapan.api.ratelimit import limiter, pipeline_limit
+from delapan.api.ratelimit import _local_tier_exempt, limiter, pipeline_limit
 from delapan.core.agent.preamble import select_preamble
 from delapan.core.agent.state import TenantContext
 from delapan.core.agent.synopsis import maybe_rebuild_synopsis
@@ -157,7 +157,7 @@ async def _search_events(
 
 
 @router.post("/canvas/search")
-@limiter.limit(pipeline_limit, override_defaults=False)
+@limiter.limit(pipeline_limit, override_defaults=False, exempt_when=_local_tier_exempt)
 async def canvas_search(
     request: Request,
     body: CanvasSearchBody,
@@ -185,7 +185,7 @@ def _clamped_content(content: dict, cap: int) -> dict:
 
 
 @router.post("/canvas/keep")
-@limiter.limit(pipeline_limit, override_defaults=False)
+@limiter.limit(pipeline_limit, override_defaults=False, exempt_when=_local_tier_exempt)
 async def canvas_keep(
     request: Request,
     response: Response,  # unused directly — slowapi injects rate-limit headers
