@@ -116,6 +116,19 @@ async def delapan_projects() -> dict:
     return _projects_impl(store)
 
 
+def build_combined_app():
+    """The Fly-facing ASGI app: FastMCP's streamable-http app (MCP path
+    unchanged — the claude.ai connector URL keeps working) with the REST
+    /api + /health mounted at root, catch-all last."""
+    from starlette.routing import Mount
+
+    from delapan.api.main import app as rest_app
+
+    sapp = mcp.streamable_http_app()
+    sapp.router.routes.append(Mount("/", app=rest_app))
+    return sapp
+
+
 def main() -> None:
     from delapan.store import active_backend
 
@@ -123,7 +136,9 @@ def main() -> None:
         raise RuntimeError(
             "cloud_server requires DELAPAN_BACKEND=cloud (or valid Supabase creds present)"
         )
-    mcp.run(transport="streamable-http")
+    import uvicorn
+
+    uvicorn.run(build_combined_app(), host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))
 
 
 if __name__ == "__main__":

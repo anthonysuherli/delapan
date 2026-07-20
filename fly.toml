@@ -10,6 +10,7 @@ primary_region = 'sjc'
 [env]
   CLOUD_SERVER_URL = 'https://delapan-cloud-mcp.fly.dev'
   DELAPAN_BACKEND = 'cloud'
+  DLP_API__AUTH = 'supabase'
   PORT = '8000'
 
 [http_service]
