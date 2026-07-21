@@ -106,9 +106,16 @@ Use Supabase Auth built-ins throughout (use-over-build):
 
 ## C. Authenticated engine API
 
-A FastAPI auth dependency reuses the proven cloud-MCP pieces:
-`Authorization: Bearer <Supabase JWT>` → `SupabaseTokenVerifier` →
-`resolve_tenant_for_token` → `TenantContext` → org-scoped `Store` calls.
+A FastAPI auth dependency (`api/auth.py::verify_bearer`) verifies the bearer
+token locally — no GoTrue round-trip per request — then hands off to the same
+tenancy resolution the cloud MCP server uses: `Authorization: Bearer <Supabase
+JWT>` → `verify_bearer` (ES256 against the project's JWKS via a cached
+`PyJWKClient`; HS256 against `SUPABASE_JWT_SECRET` as a legacy fallback for
+self-hosted projects, never the primary path) → `resolve_tenant_for_token` →
+`TenantContext` → org-scoped `Store` calls. This is a separate local verifier
+from the cloud MCP server's own `SupabaseTokenVerifier` (`mcp/cloud_auth.py`,
+a network `auth.get_user()` call) — same tokens, different transport, kept
+distinct deliberately so `/api` stays fast under load.
 
 - **Config, never hardcoded:** `api.auth: none | supabase` in `config.yaml`
   (`DLP_API__AUTH`), default `none` — the local tier's behavior is

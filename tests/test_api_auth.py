@@ -1,4 +1,5 @@
-"""Auth-layer tests: forged HS256 JWTs against a test secret — hermetic."""
+"""Auth-layer tests: HS256 fallback (forged, test secret) and ES256/JWKS (real
+in-test EC keypairs, fake injected JWKS source) — both hermetic, no network."""
 
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ import time
 
 import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import HTTPException
 
 from delapan.api.ratelimit import _HAVE_SLOWAPI
@@ -27,12 +29,72 @@ def _token(
 
 @pytest.fixture(autouse=True)
 def _jwt_secret(monkeypatch):
+    """HS256 secret configured, ES256/JWKS deliberately unconfigured (empty
+    `SUPABASE_URL` — a real repo `.env` may set it, and `monkeypatch.delenv`
+    can't shadow a dotenv-sourced default, only `setenv("", ...)` can) so
+    `verify_bearer` takes the HS256 fallback path by default. Individual
+    ES256 tests below override `SUPABASE_URL` (and inject a fake JWKS client)
+    to exercise the primary path instead."""
     monkeypatch.setenv("SUPABASE_JWT_SECRET", SECRET)
+    monkeypatch.setenv("SUPABASE_URL", "")
     from delapan.core.config import get_settings
 
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
+
+
+def _es256_keypair():
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    return private_key, private_key.public_key()
+
+
+def _es256_token(
+    private_key,
+    sub: str = "user-es",
+    *,
+    aud: str = "authenticated",
+    exp_delta: int = 3600,
+    kid: str = "test-kid",
+) -> str:
+    return jwt.encode(
+        {"sub": sub, "aud": aud, "exp": int(time.time()) + exp_delta},
+        private_key,
+        algorithm="ES256",
+        headers={"kid": kid},
+    )
+
+
+class _FakeSigningKey:
+    def __init__(self, key):
+        self.key = key
+
+
+class _FakeJWKClient:
+    """Injected in place of `auth._jwk_client()` — never touches the network.
+    Returns a fixed signing key, or raises the given exception, regardless of
+    the token's actual `kid` (the tests control the scenario directly)."""
+
+    def __init__(self, public_key=None, *, raises: Exception | None = None):
+        self._public_key = public_key
+        self._raises = raises
+
+    def get_signing_key_from_jwt(self, token):
+        if self._raises is not None:
+            raise self._raises
+        return _FakeSigningKey(self._public_key)
+
+
+def _use_jwks(monkeypatch, jwk_client) -> None:
+    """Point `verify_bearer` at ES256/JWKS: real `SUPABASE_URL` config plus
+    the fake client seam, mirroring `_service_client()`'s injection below."""
+    monkeypatch.setenv("SUPABASE_URL", "https://fake-project.supabase.co")
+    from delapan.core.config import get_settings
+
+    get_settings.cache_clear()
+    import delapan.api.auth as auth_mod
+
+    monkeypatch.setattr(auth_mod, "_jwk_client", lambda: jwk_client)
 
 
 def test_verify_bearer_valid_returns_sub():
@@ -67,6 +129,92 @@ def test_verify_bearer_wrong_audience_401():
     with pytest.raises(HTTPException) as exc:
         verify_bearer(f"Bearer {_token(aud='not-authenticated')}")
     assert exc.value.status_code == 401
+
+
+def test_verify_bearer_neither_configured_500(monkeypatch):
+    """No SUPABASE_URL and no SUPABASE_JWT_SECRET — production misconfiguration,
+    not a bad token; the old error was 'SUPABASE_JWT_SECRET not configured'."""
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", "")
+    from delapan.core.config import get_settings
+
+    get_settings.cache_clear()
+    from delapan.api.auth import verify_bearer
+
+    with pytest.raises(HTTPException) as exc:
+        verify_bearer(f"Bearer {_token()}")
+    assert exc.value.status_code == 500
+
+
+def test_verify_bearer_es256_valid_returns_sub(monkeypatch):
+    """The production case: a real EC P-256 keypair signs the token, its
+    public half is served through the injected JWKS seam — no network."""
+    private_key, public_key = _es256_keypair()
+    _use_jwks(monkeypatch, _FakeJWKClient(public_key))
+    from delapan.api.auth import verify_bearer
+
+    token = _es256_token(private_key, "user-es-1")
+    assert verify_bearer(f"Bearer {token}") == "user-es-1"
+
+
+def test_verify_bearer_es256_wrong_key_401(monkeypatch):
+    """Token signed by one EC key, JWKS serves the signing key of a different
+    (unrelated) one — a matching `kid` but a real signature mismatch, so this
+    must 401 outright rather than being retried against HS256."""
+    signing_key, _ = _es256_keypair()
+    _other_signing_key, other_public_key = _es256_keypair()
+    _use_jwks(monkeypatch, _FakeJWKClient(other_public_key))
+    from delapan.api.auth import verify_bearer
+
+    token = _es256_token(signing_key)
+    with pytest.raises(HTTPException) as exc:
+        verify_bearer(f"Bearer {token}")
+    assert exc.value.status_code == 401
+
+
+def test_verify_bearer_es256_expired_401(monkeypatch):
+    private_key, public_key = _es256_keypair()
+    _use_jwks(monkeypatch, _FakeJWKClient(public_key))
+    from delapan.api.auth import verify_bearer
+
+    token = _es256_token(private_key, exp_delta=-10)
+    with pytest.raises(HTTPException) as exc:
+        verify_bearer(f"Bearer {token}")
+    assert exc.value.status_code == 401
+
+
+def test_verify_bearer_es256_wrong_audience_401(monkeypatch):
+    private_key, public_key = _es256_keypair()
+    _use_jwks(monkeypatch, _FakeJWKClient(public_key))
+    from delapan.api.auth import verify_bearer
+
+    token = _es256_token(private_key, aud="not-authenticated")
+    with pytest.raises(HTTPException) as exc:
+        verify_bearer(f"Bearer {token}")
+    assert exc.value.status_code == 401
+
+
+def test_verify_bearer_es256_no_jwks_match_falls_back_to_hs256(monkeypatch):
+    """Unknown/absent `kid` (no JWKS match, e.g. `PyJWKClientError`) — unlike
+    a matched-but-invalid key, this is exactly the case that should still try
+    the legacy HS256 secret: a genuinely valid HS256 token must be accepted."""
+    _use_jwks(monkeypatch, _FakeJWKClient(raises=jwt.PyJWKClientError("no matching kid")))
+    from delapan.api.auth import verify_bearer
+
+    assert verify_bearer(f"Bearer {_token('user-legacy')}") == "user-legacy"
+
+
+def test_verify_bearer_jwks_unreachable_503(monkeypatch):
+    """A JWKS fetch that fails on the network must not read as a forged
+    token — even with a valid HS256 secret configured, an outage on the
+    primary (ES256) path is surfaced as 503, not silently swallowed."""
+    _use_jwks(
+        monkeypatch, _FakeJWKClient(raises=jwt.PyJWKClientConnectionError("connection refused"))
+    )
+    from delapan.api.auth import verify_bearer
+
+    with pytest.raises(HTTPException) as exc:
+        verify_bearer(f"Bearer {_token()}")
+    assert exc.value.status_code == 503
 
 
 class _FakeTable:
