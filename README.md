@@ -59,6 +59,7 @@ The local tier stores everything in `~/.delapan/delapan.db` (override with
 | **Canvas surface** — `/canvas/search` (SSE: ephemeral web candidates + grounded streamed answer) and `/canvas/keep` (resolver-gated persistence returning ADD/UPDATE/NOOP/SUPERSEDE events) | `delapan/api/routes_canvas.py` + `delapan/core/canvas/` |
 | **Pluggable storage** — `Store` protocol; ships SQLite, plus a Supabase/pgvector backend | `store/` |
 | **MCP server** | `mcp/` |
+| **Public `/api` auth** — config-forked bearer auth (Supabase JWT) + beta gate for the hosted tier; `auth: none` keeps the local tier byte-identical | `delapan/api/auth.py` |
 
 ## Project tracking
 
@@ -142,8 +143,18 @@ pytest && ruff check .
   (resolver-gated persistence) landed; includes two loud-failure fixes: explore now fails the run
   on provider quota/error (Tavily HTTP 432, etc.), and synopsis rebuild routes via gateway with
   status reporting (`rebuilt`/`skipped`/`failed`).
+- **Hosted-tier backend auth (build order phase 1 of [the public-release design](docs/truenorth/specs/2026-07-20-public-release-design.md))** —
+  `api.auth: none | supabase` config fork; local JWT verification against `SUPABASE_JWT_SECRET`
+  (`delapan/api/auth.py`), `beta_members` gate, org-scoped tenancy dependencies; slowapi rate
+  limiting keyed by verified subject; an RLS audit script covering all 29 tenant tables; a
+  two-user isolation acceptance test; `build_combined_app()` (`delapan/mcp/cloud_server.py`)
+  serves REST `/api` beside the MCP server for a single Fly deploy. The local tier is unaffected
+  (`auth: none` default).
 
 **Next:**
+- Public release phases 2–3: frontend auth screens, `/app` guard + waitlist gate, landing/legal
+  pages, GitHub OAuth, custom SMTP, Sentry/uptime/analytics wiring, and the Fly deploy of the
+  combined MCP+REST app — none of this is done yet (see the spec's build order).
 - The capture HTTP route (mirror the remaining MCP-adjacent surface over FastAPI).
 - Concepts, drift, deepen, bridges, monitoring, user-profile, research reports, and the broader MCP tool surface.
 - Store-route or gate the remaining cloud-coupled surfaces (`userprofile`, generic `knowledge_graph/builder`) — currently `[cloud]`-gated at call-time.

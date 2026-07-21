@@ -18,15 +18,17 @@ Node-create embeddings are best-effort: no OPENAI_API_KEY → insert unembedded.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from delapan.api.deps import resolve_kb_or_404
+from delapan.api.auth import request_tenancy
 from delapan.core.agent.concept_doc import synthesize_concept_doc
+from delapan.core.agent.state import TenantContext
 from delapan.core.clients.embeddings import embed_batch
 from delapan.core.config import get_settings
 from delapan.core.knowledge_graph.service import kg_schema_view, read_graph
+from delapan.store import Store
 
 router = APIRouter(prefix="/api/projects/{project}/kbs/{kb}/graph")
 
@@ -59,14 +61,13 @@ def _wire_edge(e: dict) -> dict:
 
 @router.get("")
 def get_graph(
-    project: str,
-    kb: str,
     focus: str | None = None,
     depth: int = 2,
     node_cap: int = 500,
     edge_cap: int = 2000,
+    tenancy: tuple[TenantContext, Store] = Depends(request_tenancy),
 ) -> dict:
-    ctx, store = resolve_kb_or_404(project, kb)
+    ctx, store = tenancy
     graph = read_graph(
         store, ctx.kb_id, focus=focus, depth=depth, node_cap=node_cap, edge_cap=edge_cap
     )
@@ -77,14 +78,14 @@ def get_graph(
 
 
 @router.get("/stats")
-def get_stats(project: str, kb: str) -> dict:
-    ctx, store = resolve_kb_or_404(project, kb)
+def get_stats(tenancy: tuple[TenantContext, Store] = Depends(request_tenancy)) -> dict:
+    ctx, store = tenancy
     return store.kg_stats(ctx.kb_id)
 
 
 @router.get("/schema")
-def get_schema(project: str, kb: str) -> dict:
-    ctx, store = resolve_kb_or_404(project, kb)
+def get_schema(tenancy: tuple[TenantContext, Store] = Depends(request_tenancy)) -> dict:
+    ctx, store = tenancy
     return kg_schema_view(store, ctx.kb_id)
 
 
@@ -110,8 +111,10 @@ class NodePatch(BaseModel):
 
 
 @router.post("/nodes")
-async def post_nodes(project: str, kb: str, body: NodesBody) -> dict:
-    ctx, store = resolve_kb_or_404(project, kb)
+async def post_nodes(
+    body: NodesBody, tenancy: tuple[TenantContext, Store] = Depends(request_tenancy)
+) -> dict:
+    ctx, store = tenancy
     embeddings: list[list[float]] | None = None
     if get_settings().openai_api_key:
         try:
@@ -135,8 +138,12 @@ async def post_nodes(project: str, kb: str, body: NodesBody) -> dict:
 
 
 @router.patch("/nodes/{node_id}")
-async def patch_node(project: str, kb: str, node_id: str, body: NodePatch) -> dict:
-    ctx, store = resolve_kb_or_404(project, kb)
+async def patch_node(
+    node_id: str,
+    body: NodePatch,
+    tenancy: tuple[TenantContext, Store] = Depends(request_tenancy),
+) -> dict:
+    ctx, store = tenancy
     existing = store.get_kg_node(ctx.kb_id, node_id)
     if existing is None:
         raise HTTPException(status_code=404, detail=f"node not found: {node_id}")
@@ -153,8 +160,10 @@ async def patch_node(project: str, kb: str, node_id: str, body: NodePatch) -> di
 
 
 @router.delete("/nodes/{node_id}")
-def delete_node(project: str, kb: str, node_id: str) -> dict:
-    ctx, store = resolve_kb_or_404(project, kb)
+def delete_node(
+    node_id: str, tenancy: tuple[TenantContext, Store] = Depends(request_tenancy)
+) -> dict:
+    ctx, store = tenancy
     result = store.delete_kg_node(ctx.kb_id, node_id)
     if not result.get("deleted"):
         raise HTTPException(status_code=404, detail=f"node not found: {node_id}")
@@ -162,10 +171,12 @@ def delete_node(project: str, kb: str, node_id: str) -> dict:
 
 
 @router.post("/nodes/{node_id}/concept-doc")
-async def concept_doc(project: str, kb: str, node_id: str) -> JSONResponse:
+async def concept_doc(
+    node_id: str, tenancy: tuple[TenantContext, Store] = Depends(request_tenancy)
+) -> JSONResponse:
     if not get_settings().ai_gateway_api_key:
         return JSONResponse(status_code=503, content={"error": "llm unavailable"})
-    ctx, store = resolve_kb_or_404(project, kb)
+    ctx, store = tenancy
     try:
         doc = await synthesize_concept_doc(store, ctx.kb_id, node_id)
     except LookupError as exc:
@@ -194,8 +205,10 @@ class EdgesBody(BaseModel):
 
 
 @router.post("/edges")
-async def post_edges(project: str, kb: str, body: EdgesBody) -> dict:
-    ctx, store = resolve_kb_or_404(project, kb)
+async def post_edges(
+    body: EdgesBody, tenancy: tuple[TenantContext, Store] = Depends(request_tenancy)
+) -> dict:
+    ctx, store = tenancy
     rows = [
         {
             "org_id": ctx.org_id,
@@ -212,8 +225,10 @@ async def post_edges(project: str, kb: str, body: EdgesBody) -> dict:
 
 
 @router.delete("/edges/{edge_id}")
-def delete_edge(project: str, kb: str, edge_id: str) -> dict:
-    ctx, store = resolve_kb_or_404(project, kb)
+def delete_edge(
+    edge_id: str, tenancy: tuple[TenantContext, Store] = Depends(request_tenancy)
+) -> dict:
+    ctx, store = tenancy
     result = store.delete_kg_edge(ctx.kb_id, edge_id)
     if not result.get("deleted"):
         raise HTTPException(status_code=404, detail=f"edge not found: {edge_id}")

@@ -17,10 +17,11 @@ allowance). Binds loopback only; the cloud tier's full HTTP surface (/agent,
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from delapan.api.health import router as health_router
+from delapan.api.ratelimit import enforce_default_limit, limiter
 from delapan.api.routes_canvas import router as canvas_router
 from delapan.api.routes_explore import router as explore_router
 from delapan.api.routes_findings import router as findings_router
@@ -38,12 +39,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+try:  # slowapi ships in the [cloud] extra — local-only installs no-op instead
+    from slowapi import _rate_limit_exceeded_handler
+    from slowapi.errors import RateLimitExceeded
+
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    # No SlowAPIMiddleware here: on this FastAPI/slowapi pairing it enforces
+    # nothing (`include_router` wraps child routes in a `_IncludedRouter` with
+    # no `.endpoint`, so slowapi's `app.routes` walk never finds a handler and
+    # treats every route as exempt). `enforce_default_limit` below is the
+    # replacement — see its docstring in ratelimit.py for the full chain.
+    # ImportError is already logged once, in ratelimit.py's own guard.
+except ImportError:
+    pass
+
+_API_DEP = Depends(enforce_default_limit)
 app.include_router(health_router)
-app.include_router(projects_router)
-app.include_router(kg_router)
-app.include_router(findings_router)
-app.include_router(explore_router)
-app.include_router(canvas_router)
+app.include_router(projects_router, dependencies=[_API_DEP])
+app.include_router(kg_router, dependencies=[_API_DEP])
+app.include_router(findings_router, dependencies=[_API_DEP])
+app.include_router(explore_router, dependencies=[_API_DEP])
+app.include_router(canvas_router, dependencies=[_API_DEP])
 
 
 def main() -> None:

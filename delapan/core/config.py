@@ -28,7 +28,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -431,10 +431,25 @@ class PromptsConfig(BaseModel):
     )
 
 
+class ApiConfig(BaseModel):
+    """The HTTP /api surface — auth mode and rate limits."""
+
+    # "none" (local, auth-less) | "supabase" (bearer JWT + beta gate). A
+    # Literal so a typo (e.g. fly.toml's DLP_API__AUTH misconfigured) raises a
+    # loud ValidationError at boot instead of silently falling into the
+    # `!= "supabase"` branch, which used to mean "treat as auth-none" —
+    # dangerous for the cloud deploy, whose tenancy path would otherwise serve
+    # anonymous requests as the owner's own MCP-authenticated identity.
+    auth: Literal["none", "supabase"] = "none"
+    rate_limit_default: str = "120/minute"  # per user-or-IP, all /api routes (not /health)
+    rate_limit_pipeline: str = "12/hour"  # explore/canvas POSTs (LLM + search spend)
+
+
 class AppConfig(BaseModel):
     """Aggregate of all tunable sections."""
 
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    api: ApiConfig = Field(default_factory=ApiConfig)
     canvas: CanvasConfig = Field(default_factory=CanvasConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     tiers: TiersConfig = Field(default_factory=TiersConfig)

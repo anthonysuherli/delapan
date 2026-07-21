@@ -22,11 +22,13 @@ import json
 from datetime import datetime, timezone
 from typing import AsyncIterator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from delapan.api.deps import missing_pipeline_keys, resolve_kb_or_404
+from delapan.api.auth import request_tenancy_creating
+from delapan.api.deps import missing_pipeline_keys
+from delapan.api.ratelimit import _local_tier_exempt, limiter, pipeline_limit
 from delapan.core.agent.state import TenantContext
 from delapan.core.agent.synopsis import maybe_rebuild_synopsis
 from delapan.core.config import get_config
@@ -124,6 +126,11 @@ async def _events(ctx: TenantContext, store: Store, body: ExploreBody) -> AsyncI
 
 
 @router.post("/explore")
-async def explore(project: str, kb: str, body: ExploreBody) -> StreamingResponse:
-    ctx, store = resolve_kb_or_404(project, kb)
+@limiter.limit(pipeline_limit, override_defaults=False, exempt_when=_local_tier_exempt)
+async def explore(
+    request: Request,
+    body: ExploreBody,
+    tenancy: tuple[TenantContext, Store] = Depends(request_tenancy_creating),
+) -> StreamingResponse:
+    ctx, store = tenancy
     return StreamingResponse(_events(ctx, store, body), media_type="text/event-stream")
