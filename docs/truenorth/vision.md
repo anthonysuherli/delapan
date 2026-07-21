@@ -42,6 +42,12 @@ activity reporting you can trust.
   resulting graph; the user sees the effect *before* committing.
 - **Grounding preserved end to end.** Every finding, node, and edge keeps its
   `grounded_in` provenance through the mem0 port and the new backends.
+- **Hosted public tier with account isolation.** delapan.ai serves a public
+  landing page at `/` and an account-gated dashboard at `/app`: self-serve
+  sign-up (email+password and GitHub OAuth via Supabase Auth), one org per user
+  on the existing `org_members` + RLS rails, and an authenticated engine API
+  giving the dashboard real (non-mock) data. The cloud tier launches as a free,
+  invite-gated beta.
 
 ## Non-Goals
 - **Not** replacing delapan's findings/`Store` architecture wholesale. mem0 lives
@@ -58,6 +64,13 @@ activity reporting you can trust.
 - **Not** adopting mem0's hosted/managed platform — OSS, self-hosted only.
 - **Not** exposing all ~20 mem0 backends. Scope is **pgvector + Elasticsearch**
   for now; more only on demand.
+- **Not** billing at launch. No Stripe until beta usage justifies it; the
+  open-core local tier is the public free story.
+- **Not** multi-member organizations at launch. Org-per-user only; invites,
+  roles, and team management are post-launch.
+- **Not** retiring the Canvas v1 draft (2026-07-17, unratified). It remains a
+  candidate later release; the hosted-tier amendment neither ships nor blocks
+  it.
 - **Out of scope:** br8n (the fork) and any cross-repo sync work.
 
 ## Invariants
@@ -81,6 +94,11 @@ activity reporting you can trust.
   `config.yaml`.
 - The KG extraction model stays a **frontier model by default** (the graph is the
   trust artifact).
+- Every cloud table carrying tenant data has **org-scoped RLS on reads and
+  writes (`WITH CHECK`), verified by audit/test** — isolation by construction,
+  not convention.
+- The **local open-core tier stays auth-less.** Auth is a cloud-tier concern;
+  no local workflow ever requires an account.
 
 ## Acceptance Criteria
 - **Backend swap demoed both ways.** With `vector_backend: pgvector` (default) and
@@ -101,6 +119,17 @@ activity reporting you can trust.
   unchanged. Same behaviour on both backends.
 - **Activity reporting is truthful.** `delapan_projects` reports non-zero recent
   activity for any KB written to today.
+- **Stranger round-trip.** Landing → invite code → sign-up (email or GitHub) →
+  verified email → first-run empty state → first populated graph, with no
+  operator intervention.
+- **Isolation holds.** A second account can neither read nor write the first
+  account's projects, KBs, findings, or graph — verified by test, not
+  inspection.
+- **Local tier unaffected by auth.** The local dashboard workflow still works
+  with zero auth configuration.
+- **Hardening minimum live before the sign-up link is public:** ToS + privacy
+  policy, custom SMTP for auth email, rate limiting on public endpoints, error
+  tracking on backend + frontend, backups verified.
 
 ## Planned Detours
 - **KB lifecycle + truthful activity.** Add reversible archive state for projects
@@ -169,3 +198,19 @@ activity reporting you can trust.
   convention that nothing has written since 2026-06-09, while 3,321 other
   findings landed through 2026-07-18, making every KB look dormant.
   — Ratified by: anthonysuherli (session 2026-07-18)
+- 2026-07-19 — **Added End Goal "Hosted public tier with account isolation"**:
+  landing at `/`, account-gated dashboard at `/app`, sign-up via email+password
+  and GitHub OAuth (Supabase Auth), org-per-user on the existing `org_members`
+  + RLS rails, authenticated engine API (one `/api` contract for both tiers —
+  cloud verifies Supabase JWTs, local stays auth-less), free invite-gated beta.
+  Added invariants: org-scoped RLS verified on every tenant table; local tier
+  never requires an account. Added non-goals: no billing at launch, no
+  multi-member orgs at launch, Canvas v1 draft unaffected (remains a candidate
+  later release). Design principle carried into the spec: **consider free,
+  already-available managed services before building** (Supabase Auth flows,
+  Sentry, uptime/status, analytics free tiers). Motivated by: deployed
+  delapan.ai serving mock data with no auth; hosted rails (Supabase Auth /
+  OAuth 2.1, `org_members`, org-scoped RLS) already live in the cloud MCP
+  tier; 2026-07-19 launch-readiness research (24 findings → `delapan/master`,
+  full report in the public-release spec). — Ratified by: anthonysuherli
+  (session 2026-07-19)
