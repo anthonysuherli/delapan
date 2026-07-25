@@ -17,6 +17,8 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
+from postgrest.exceptions import APIError
+
 from delapan.core.clients.supabase import user_client
 
 logger = logging.getLogger(__name__)
@@ -41,36 +43,62 @@ class SupabaseStore:
 
     # --- tenancy -------------------------------------------------------------
 
-    def resolve_project(self, name: str, *, create: bool) -> tuple[str, str]:
+    def _project_id_by_name(self, name: str) -> str | None:
         rows = (
             self._c.table("projects").select("id")
             .eq("org_id", self._org_id).eq("name", name).limit(1).execute().data
         )
-        if rows:
-            return self._org_id, rows[0]["id"]
+        return rows[0]["id"] if rows else None
+
+    def resolve_project(self, name: str, *, create: bool) -> tuple[str, str]:
+        pid = self._project_id_by_name(name)
+        if pid:
+            return self._org_id, pid
         if not create:
             raise RuntimeError(f"project {name!r} not found")
         pid = uuid.uuid4().hex
-        self._c.table("projects").insert(
-            {"id": pid, "org_id": self._org_id, "name": name, "created_at": _now_iso()}
-        ).execute()
+        try:
+            self._c.table("projects").insert(
+                {"id": pid, "org_id": self._org_id, "name": name, "created_at": _now_iso()}
+            ).execute()
+        except APIError as exc:
+            if exc.code != "23505":
+                raise
+            # unique(org_id, name): lost the create race — return the winner's row
+            raced = self._project_id_by_name(name)
+            if raced:
+                return self._org_id, raced
+            raise
         return self._org_id, pid
 
-    def resolve_kb(self, org_id: str, project_id: str, name: str, *, create: bool) -> str:
+    def _kb_id_by_name(self, org_id: str, project_id: str, name: str) -> str | None:
         rows = (
             self._c.table("kbs").select("id")
             .eq("org_id", org_id).eq("project_id", project_id).eq("name", name)
             .limit(1).execute().data
         )
-        if rows:
-            return rows[0]["id"]
+        return rows[0]["id"] if rows else None
+
+    def resolve_kb(self, org_id: str, project_id: str, name: str, *, create: bool) -> str:
+        kid = self._kb_id_by_name(org_id, project_id, name)
+        if kid:
+            return kid
         if not create:
             raise RuntimeError(f"kb {name!r} not found")
         kid = uuid.uuid4().hex
-        self._c.table("kbs").insert(
-            {"id": kid, "org_id": org_id, "project_id": project_id, "name": name,
-             "published": False, "retrieval_miss_streak": 0, "created_at": _now_iso()}
-        ).execute()
+        try:
+            self._c.table("kbs").insert(
+                {"id": kid, "org_id": org_id, "project_id": project_id, "name": name,
+                 "published": False, "retrieval_miss_streak": 0, "created_at": _now_iso()}
+            ).execute()
+        except APIError as exc:
+            if exc.code != "23505":
+                raise
+            # unique(org_id, project_id, name): lost the create race — return the winner
+            raced = self._kb_id_by_name(org_id, project_id, name)
+            if raced:
+                return raced
+            raise
         return kid
 
     def list_projects(self, *, include_archived: bool = False) -> list[dict]:
