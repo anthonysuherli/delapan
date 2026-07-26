@@ -34,3 +34,6 @@ venv/
 
 # Eval run artifacts
 evals/runs/
+evals/corpus/*.db
+evals/corpus/*.db-shm
+evals/corpus/*.db-wal
