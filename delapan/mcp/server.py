@@ -36,8 +36,8 @@ from mcp.server.fastmcp import FastMCP
 from delapan.core.agent.preamble import Depth, assess_coverage, band_findings, select_preamble
 from delapan.core.agent.state import TenantContext
 from delapan.core.agent.synopsis import maybe_rebuild_synopsis
-from delapan.core.clients.embeddings import embed_text
-from delapan.core.config import get_config, get_settings
+from delapan.core.clients.embeddings import MissingEmbeddingKeyError, embed_text
+from delapan.core.config import get_config, get_settings, missing_pipeline_keys
 from delapan.core.curation.backlog import rank_backlog
 from delapan.core.curation.recorder import schedule_record
 from delapan.core.exploration import run_exploration
@@ -88,7 +88,10 @@ async def delapan_resume(
         except Exception:  # noqa: BLE001 — the card must render even when the store won't
             store = None
         return kb_not_found_card(project, kb, exc, store=store)
-    return await _resume_impl(ctx, query, depth)
+    try:
+        return await _resume_impl(ctx, query, depth)
+    except MissingEmbeddingKeyError as exc:
+        return {"error": str(exc)}
 
 
 # --- Recall ----------------------------------------------------------------
@@ -128,7 +131,10 @@ async def delapan_search(project: str, kb: str, query: str, limit: int | None = 
         ctx = resolve_tenant(project, kb, create=False)
     except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
         return {"error": f"KB not found ({project}/{kb}): {exc}"}
-    return await _search_impl(ctx, query, limit)
+    try:
+        return await _search_impl(ctx, query, limit)
+    except MissingEmbeddingKeyError as exc:
+        return {"error": str(exc)}
 
 
 # --- Build the KB ------------------------------------------------------------
@@ -158,6 +164,13 @@ def _clear_archive(store, ctx) -> bool:
 
 
 async def _explore_impl(ctx: TenantContext, prompt: str | None, max_findings: int | None) -> dict:
+    missing = missing_pipeline_keys()
+    if missing:
+        return {
+            "error": "explore needs credentials: set "
+            + " and ".join(missing)
+            + " in the plugin root's .env (see .env.example) — resume works without them."
+        }
     store = get_store(ctx.access_token, org_id=ctx.org_id)
     # Promptless: consume the KB's top curation gap in place of a caller prompt.
     # Resolved before any archive flip so an empty backlog changes nothing.

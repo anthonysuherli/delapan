@@ -13,6 +13,10 @@ from delapan.core.config import get_config, get_settings
 _client: AsyncOpenAI | None = None
 
 
+class MissingEmbeddingKeyError(RuntimeError):
+    """No embedding credential configured — actionable, never a traceback."""
+
+
 def _get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
@@ -24,8 +28,13 @@ def _get_client() -> AsyncOpenAI:
                 api_key=settings.ai_gateway_api_key,
                 base_url=settings.ai_gateway_base_url,
             )
-        else:
+        elif settings.openai_api_key:
             _client = AsyncOpenAI(api_key=settings.openai_api_key)
+        else:
+            raise MissingEmbeddingKeyError(
+                "no embedding credential configured — set AI_GATEWAY_API_KEY "
+                "(or OPENAI_API_KEY) in the plugin root's .env (see .env.example)"
+            )
     return _client
 
 

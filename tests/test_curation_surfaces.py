@@ -66,6 +66,11 @@ def _topic(tid="t1", *, text="what is csm", recurrence=3, coverage="gap"):
 
 @pytest.fixture()
 def patched(monkeypatch):
+    from delapan.core import config as cfg
+
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+    monkeypatch.setenv("AI_GATEWAY_API_KEY", "test-key")
+    cfg.get_settings.cache_clear()
     store = _Store()
     monkeypatch.setattr(srv, "resolve_tenant", lambda *a, **k: _Ctx())
     monkeypatch.setattr(srv, "get_store", lambda *a, **k: store)
