@@ -77,8 +77,9 @@ data/demo.db           # pre-built demo KB (see §2)
   (architecture, findings/preamble model, how explore works). On server start,
   if the default DB is absent, the server copies `data/demo.db` into place
   (path resolution unchanged; `DELAPAN_DB_PATH` still overrides). First
-  `delapan_projects` already lists the demo project; `delapan_search` returns
-  grounded findings with zero keys. The copy is local-tier-only by design —
+  `delapan_projects` already lists the demo project, and `delapan_resume`
+  (no query) renders the demo synopsis with zero keys. `delapan_search` embeds
+  the query, so it activates once the one key is set. The copy is local-tier-only by design —
   cloud onboarding is signup — and involves no `Store` method, so the parity
   invariant is untouched.
 - **Onboarding card.** `delapan_resume` for a repo/branch with no KB returns
@@ -97,8 +98,10 @@ data/demo.db           # pre-built demo KB (see §2)
   - Explore runs that write zero findings (Tavily quota, no results) return an
     explicit `empty` status with the reason; the explore skill renders it
     verbatim. No zero-finding run may report plain "completed".
-  - The stale `OPENAI_API_KEY` gate in `api/deps.py` is removed/corrected to
-    match the gateway-based credential model.
+  - (Verified already fixed in code) `api/deps.py`'s `missing_pipeline_keys()`
+    treats the gateway key as the only required provider credential. This
+    release moves it to `delapan/core/config.py`, reuses it as the MCP explore
+    preflight, and pins it with a regression test.
 
 ### 3. Skills polish
 
@@ -131,7 +134,8 @@ commands → first resume (demo card) → add key → first explore on their rep
 
 1. Fresh machine with uv: marketplace add + install → `/delapan:resume` returns
    the onboarding/demo card — zero keys configured, zero tracebacks.
-2. `/delapan:search` on the demo KB returns grounded findings with zero keys.
+2. `/delapan:resume` on the demo KB renders its synopsis with zero keys; with
+   the single key set, `/delapan:search` returns grounded findings.
 3. With one key set, `/delapan:explore` on a real repo produces findings;
    empty/quota runs report `empty` + reason, never silent success.
 4. No personal references in any shipped skill; `tracking` absent from the
