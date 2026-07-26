@@ -11,6 +11,9 @@ from collections.abc import Callable
 Predictor = Callable[[str, str], float]
 
 _HHEM_ID = "vectara/hallucination_evaluation_model"
+# trust_remote_code executes code from the model repo, so the revision is pinned to a
+# vetted commit — the executed code is immutable and auditable. Recorded in run manifests.
+HHEM_REVISION = "8e4a2e6e96c708cc76c2344f7e4757df2515292c"  # 2025-10-20
 
 
 def score_faithfulness(
@@ -36,7 +39,9 @@ def load_hhem() -> Predictor:
             'HHEM needs the optional extra: uv pip install -e ".[evals-hhem]"'
         ) from exc
 
-    model = AutoModelForSequenceClassification.from_pretrained(_HHEM_ID, trust_remote_code=True)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        _HHEM_ID, revision=HHEM_REVISION, trust_remote_code=True
+    )
 
     def predict(premise: str, hypothesis: str) -> float:
         return float(model.predict([(premise, hypothesis)]).item())

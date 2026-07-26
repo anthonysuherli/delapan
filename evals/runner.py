@@ -24,7 +24,7 @@ from evals.models import Question, load_question_set
 from evals.report import render_report
 from evals.scoring.correctness import JUDGE_SYSTEM, judge
 from evals.scoring.efficiency import TOKENIZER, count_tokens
-from evals.scoring.faithfulness import Predictor, load_hhem, score_faithfulness
+from evals.scoring.faithfulness import HHEM_REVISION, Predictor, load_hhem, score_faithfulness
 
 T = TypeVar("T")
 
@@ -128,6 +128,7 @@ async def run_eval(
             "memory_enabled": cfg.memory.enabled,
         },
         "corpus_lockfile_sha256": _lockfile_sha(),
+        "hhem_revision": HHEM_REVISION if use_hhem else None,
     }
     run_dir = write_run(
         Path(out_dir) / time.strftime("%Y%m%d-%H%M%S", time.gmtime()), manifest, records
