@@ -1,0 +1,20 @@
+{
+  "name": "delapan",
+  "owner": {
+    "name": "Anthony Suherli",
+    "email": "anthonysuherli@gmail.com"
+  },
+  "metadata": {
+    "description": "delapan — grounding engine plugin: ground → grow → answer, on the delapan MCP server.",
+    "version": "0.2.0"
+  },
+  "plugins": [
+    {
+      "name": "delapan",
+      "source": "./",
+      "description": "Agentic knowledge-base engine — ground answers in maintained findings, fill gaps from the web. /delapan:resume, /delapan:search, /delapan:explore, /delapan:backlog, /delapan:projects, /delapan:model over the delapan MCP server.",
+      "version": "0.2.0",
+      "strict": false
+    }
+  ]
+}
