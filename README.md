@@ -8,6 +8,23 @@ delapan runs fully local (SQLite + `sqlite-vec`, no cloud, no account) or behind
 own storage via a small `Store` protocol. It ships as an MCP server, so any MCP client
 (Claude Code, etc.) can use it out of the box.
 
+## Install as a Claude Code plugin
+
+Requires [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
+
+    claude plugin marketplace add anthonysuherli/delapan
+    claude plugin install delapan@delapan
+
+First launch materializes the Python environment (via uv) and seeds a bundled
+demo KB. **With zero keys configured** you can immediately run
+`/delapan:projects` and `/delapan:resume` against the demo (project `delapan`,
+kb `demo`). To unlock semantic search and web research on your own repos, copy
+`.env.example` to `.env` in the plugin directory and set `AI_GATEWAY_API_KEY`
+(plus `TAVILY_API_KEY` for `/delapan:explore`).
+
+Skills: `/delapan:resume`, `/delapan:search`, `/delapan:explore`,
+`/delapan:backlog`, `/delapan:projects`, `/delapan:model`.
+
 ## Quickstart — local, no credentials
 
 ```bash
@@ -59,6 +76,10 @@ The local tier stores everything in `~/.delapan/delapan.db` (override with
 | **Canvas surface** — `/canvas/search` (SSE: ephemeral web candidates + grounded streamed answer) and `/canvas/keep` (resolver-gated persistence returning ADD/UPDATE/NOOP/SUPERSEDE events) | `delapan/api/routes_canvas.py` + `delapan/core/canvas/` |
 | **Pluggable storage** — `Store` protocol; ships SQLite, plus a Supabase/pgvector backend | `store/` |
 | **MCP server** | `mcp/` |
+| **Plugin launcher** — uv-run wrapper; materializes the environment on first run and starts the MCP server | `scripts/mcp-server.sh` |
+| **Claude Code skills** — six skills backing the `/delapan:*` slash commands (resume, search, explore, backlog, projects, model) | `skills/` |
+| **Bundled demo KB** — seeded on first local server start so `/delapan:projects` + `/delapan:resume` work with zero keys | `data/demo.db` |
+| **First-run onboarding** — KB-not-found guidance card + demo-KB seeding | `delapan/mcp/onboarding.py` |
 | **Public `/api` auth** — config-forked bearer auth (Supabase JWT) + beta gate for the hosted tier; `auth: none` keeps the local tier byte-identical | `delapan/api/auth.py` |
 | **Eval harness** — closed-book/production/oracle ablation, HHEM faithfulness, retrieval + verdict-calibration metrics, paired stats, reproducible run artifacts (`python -m evals run`); benchmark adapters for watsonxDocsQA + MultiHop-RAG (python -m evals.adapters.<name>) | `evals/` |
 
@@ -153,6 +174,7 @@ pytest && ruff check .
   (`auth: none` default).
 
 - **Eval pipeline** — v1 ablation harness landed (spec: docs/truenorth/specs/2026-07-26-context-eval-pipeline-design.md); phase 2: LongMemEval adapter for externally comparable numbers.
+- **Claude Code plugin shell** — shipped in-repo, marketplace-installable (2026-07-26): `scripts/mcp-server.sh` (uv-run launcher), six skills under `skills/` backing the `/delapan:*` slash commands, a bundled demo KB (`data/demo.db`, project `delapan`/kb `demo`) seeded on first local start, and first-run onboarding (`delapan/mcp/onboarding.py`). Zero-key surface is `/delapan:projects` + `/delapan:resume` against the demo; `AI_GATEWAY_API_KEY` (plus `TAVILY_API_KEY`) unlocks search/explore on real repos.
 
 **Next:**
 - Public release phases 2–3: frontend auth screens, `/app` guard + waitlist gate, landing/legal
