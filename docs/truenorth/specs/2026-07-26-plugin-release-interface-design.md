@@ -127,7 +127,7 @@ commands → first resume (demo card) → add key → first explore on their rep
   no copy; absent → copied, demo project listed).
 - **Stranger round-trip e2e (scripted):** temp `HOME` → install plugin from
   local marketplace path → wrapper cold-starts via `uv run` → `delapan_resume`
-  yields onboarding card → `delapan_search` on demo KB yields findings. No
+  yields onboarding card and the demo synopsis renders zero-key. No
   cloud access anywhere in the suite.
 
 ## Acceptance criteria
