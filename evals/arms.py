@@ -1,7 +1,8 @@
 """Ablation-arm context builders — every arm reuses the real renderer.
 
     closed_book ──► None
-    production  ──► select_preamble (real retrieval; surface=None, no telemetry)
+    production  ──► embed → match_findings → band_findings → render_preamble
+                     (select_preamble's own flow, inlined; no telemetry)
     oracle      ──► gold findings ─► render_preamble (retrieval bypassed)
     full_context ─► all live findings ─► render_preamble (big budget)
 """
@@ -11,10 +12,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from delapan.core.agent.preamble import render_preamble, select_preamble
+from delapan.core.agent import preamble
+from delapan.core.agent.preamble import assess_coverage, band_findings, render_preamble
+from delapan.core.agent.synopsis import load_synopsis
 from delapan.core.config import TiersConfig, get_config
+from delapan.store import Store
 from evals.models import Question
 
+# Engine never escapes the id attribute, so this relies on finding ids never
+# containing a `"` — true for every id generator in this codebase (uuid4 / slugs).
 _FINDING_ID = re.compile(r'<finding id="([^"]+)"')
 # list_findings(limit=None) falls back to its own 20-row default, not
 # "unbounded" — pass this (the SQLiteStore hard ceiling, LIST_MAX_LIMIT) to
@@ -47,7 +53,7 @@ def _render_rows(rows: list[dict], budget: int | None = None) -> str:
 async def build_context(
     arm: str,
     *,
-    store,
+    store: Store,
     kb_id: str,
     question: Question,
     depth: str = "normal",
@@ -57,14 +63,25 @@ async def build_context(
         return ArmContext(xml=None, coverage=None, band_counts=None)
 
     if arm == "production":
-        # surface=None: no access_events/backlog writes — evals never pollute telemetry.
-        xml, coverage = await select_preamble(
-            question.question, store=store, kb_id=kb_id, depth=depth, surface=None
+        # Mirrors select_preamble's own flow (delapan/core/agent/preamble.py:132-176)
+        # minus its schedule_record call — evals must never write access_events/
+        # backlog telemetry. Composing the primitives directly here (rather than
+        # calling select_preamble) also gives real per-band counts instead of a
+        # fabricated one derived from the rendered xml.
+        cfg = get_config().tiers
+        qvec = await preamble.embed_text(question.question)
+        rows = await store.match_findings(
+            kb_id, qvec, get_config().search.max_limit, cfg.band3_min
         )
-        ids = _ids_in(xml)
-        # band_counts from the rendered xml would be lossy; recompute cheaply:
-        # injected ids are what matters downstream, coverage carries the verdict.
-        return ArmContext(xml=xml, coverage=coverage, band_counts={1: len(ids)}, injected_ids=ids)
+        bands = band_findings(rows or [], cfg)
+        coverage = assess_coverage(bands, cfg)
+        syn_row = load_synopsis(store, kb_id)
+        synopsis = (syn_row or {}).get("content") or []
+        xml = render_preamble(synopsis, bands, depth=depth, cfg=cfg)
+        band_counts = {1: len(bands[1]), 2: len(bands[2]), 3: len(bands[3])}
+        return ArmContext(
+            xml=xml, coverage=coverage, band_counts=band_counts, injected_ids=_ids_in(xml)
+        )
 
     if arm == "oracle":
         rows = [store.get_finding(kb_id, fid) for fid in question.gold_finding_ids]

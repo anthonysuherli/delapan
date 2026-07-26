@@ -54,13 +54,35 @@ async def test_production_uses_real_retrieval(store, monkeypatch):
     ctx = await build_context("production", store=store, kb_id=kb, question=Q)
     assert ctx.coverage in {"rich", "sparse", "gap"}
     assert "fa" in ctx.injected_ids and "fb" not in ctx.injected_ids
-    assert ctx.band_counts is not None
+    # Real per-band counts, not fabricated: fa's embedding is identical to the
+    # (monkeypatched) query embedding, so its similarity is 1.0 — band 1.
+    assert set(ctx.band_counts) == {1, 2, 3}
+    assert ctx.band_counts[1] == 1
 
 
 async def test_full_context_includes_everything(store):
     _, kb = await _seed(store)
     ctx = await build_context("full_context", store=store, kb_id=kb, question=Q)
     assert set(ctx.injected_ids) == {"fa", "fb"}
+
+
+async def test_full_context_exceeds_list_findings_default_limit(store):
+    """Pins the full_context arm against regressing to list_findings(limit=None),
+    which silently caps at 20 rows — full_context must return every live finding."""
+    org, pid = store.resolve_project("evals-arms-many", create=True)
+    kb = store.resolve_kb(org, pid, "main", create=True)
+    ids = [f"f{i}" for i in range(25)]
+    await store.insert_findings(
+        [
+            {"id": fid, "org_id": org, "kb_id": kb, "title": f"Fact {i}",
+             "content": f"filler content {i}", "category": "fact",
+             "confidence": 0.5, "tags": [], "provenance": [], "embedding": VEC_A}
+            for i, fid in enumerate(ids)
+        ]
+    )
+    q = Question(id="qmany", question="anything", reference_answer="", gold_finding_ids=[ids[0]])
+    ctx = await build_context("full_context", store=store, kb_id=kb, question=q)
+    assert set(ctx.injected_ids) == set(ids)
 
 
 async def test_unknown_arm_rejected(store):
