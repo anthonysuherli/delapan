@@ -156,7 +156,7 @@ async def insert_chunks(
             "provenance": [{"url": c.doc_id, "query": dataset}],
             "embedding": e,
         }
-        for c, e in zip(chunks, embeddings)
+        for c, e in zip(chunks, embeddings, strict=True)
     ]
     await store.insert_findings(rows)
     return len(rows)

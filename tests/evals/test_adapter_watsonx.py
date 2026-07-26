@@ -64,3 +64,50 @@ async def test_max_docs_smoke_knob(faked, store):
     lock = await wx.build(project="wx-test2", kb="v1", max_docs=1)
     assert lock["counts"]["docs"] == 1 and lock["max_docs"] == 1
     assert lock["dropped_questions"] == ["t2", "t3"]    # D2 now missing too
+
+
+async def test_train_test_duplicate_question_id_deduped(store, monkeypatch, tmp_path):
+    """Same question_id in train and test: keep first occurrence, count the dupe."""
+    dup_row = {"question_id": "t1", "question": "What about alpha?",
+               "correct_answer": "Alpha.", "correct_answer_document_ids": "D1"}
+
+    def fake_load_hf(name, config, split, revision=None):
+        if config == "corpus":
+            return list(CORPUS), "deadbeef"
+        return [dup_row], "deadbeef"  # identical row surfaces in both splits
+
+    async def fake_embed_batch(texts):
+        return [[1.0] + [0.0] * 1535 for _ in texts]
+
+    monkeypatch.setattr(wx, "load_hf", fake_load_hf)
+    monkeypatch.setattr("evals.adapters.common.embed_batch", fake_embed_batch)
+    monkeypatch.setattr(wx, "SET_PATH", tmp_path / "set.yaml")
+    monkeypatch.setattr(wx, "LOCK_PATH", tmp_path / "lock.json")
+
+    lock = await wx.build(project="wx-dup", kb="v1")
+    assert lock["counts"]["questions"] == 1
+    assert lock["duplicate_question_ids"] == ["t1"]
+    _, qs = load_question_set(tmp_path / "set.yaml")
+    assert [q.id for q in qs] == ["t1"]
+
+
+async def test_all_questions_dropped_raises(store, monkeypatch, tmp_path):
+    """A build where every question's gold doc is absent raises via load_question_set."""
+    bad_qa = [{"question_id": "t1", "question": "?", "correct_answer": "?",
+               "correct_answer_document_ids": "D404"}]
+
+    def fake_load_hf(name, config, split, revision=None):
+        if config == "corpus":
+            return list(CORPUS), "deadbeef"
+        return (list(bad_qa) if split == "test" else []), "deadbeef"
+
+    async def fake_embed_batch(texts):
+        return [[1.0] + [0.0] * 1535 for _ in texts]
+
+    monkeypatch.setattr(wx, "load_hf", fake_load_hf)
+    monkeypatch.setattr("evals.adapters.common.embed_batch", fake_embed_batch)
+    monkeypatch.setattr(wx, "SET_PATH", tmp_path / "set.yaml")
+    monkeypatch.setattr(wx, "LOCK_PATH", tmp_path / "lock.json")
+
+    with pytest.raises(ValueError, match="no questions"):
+        await wx.build(project="wx-alldrop", kb="v1")

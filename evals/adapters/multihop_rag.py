@@ -26,6 +26,7 @@ from evals.adapters.common import (
     write_lockfile,
     write_set_yaml,
 )
+from evals.models import load_question_set
 
 DATASET = "yixuantt/MultiHopRAG"
 SET_PATH = Path(__file__).parent.parent / "sets" / "multihop-rag-v1.yaml"
@@ -113,6 +114,18 @@ async def build(
     )
 
     sampled = _stratified_sample(queries, sample, seed)
+    seen_qids: set[str] = set()
+    duplicate_question_ids: list[str] = []
+    deduped: list[dict] = []
+    for row in sampled:  # identical query strings collide on _qid — keep first occurrence
+        qid = _qid(str(row["query"]))
+        if qid in seen_qids:
+            duplicate_question_ids.append(qid)
+            continue
+        seen_qids.add(qid)
+        deduped.append(row)
+    sampled = deduped
+
     questions: list[dict] = []
     dropped: list[str] = []
     fallbacks: list[str] = []
@@ -131,6 +144,7 @@ async def build(
         gold_docs = sorted({str(e["url"]) for e in evidence})
         facts = [str(e.get("fact", "")) for e in evidence]
         ids, fallback = gold_chunk_ids(chunks, gold_docs, evidence_texts=facts)
+        # `not ids` is load-bearing: empty gold_docs makes all(...) vacuously True
         if not ids or not all(d in chunks_by_doc for d in gold_docs):
             dropped.append(qid)
             continue
@@ -148,6 +162,7 @@ async def build(
         f"# Recommended run flag: --oracle-budget {RECOMMENDED_ORACLE_BUDGET}\n"
     )
     write_set_yaml(SET_PATH, "multihop-rag-v1", questions, header)
+    load_question_set(SET_PATH)  # fail the build loudly if the set is unloadable
 
     doc_to_ids: dict[str, list[str]] = {}
     for c in chunks:
@@ -160,6 +175,7 @@ async def build(
         "sampled_question_ids": [q["id"] for q in questions],  # post-drop: includes only kept Qs
         "counts": {"docs": len(docs), "chunks": n_chunks, "questions": len(questions)},
         "dropped_questions": dropped, "gold_fallback_questions": fallbacks,
+        "duplicate_question_ids": duplicate_question_ids,
         "doc_to_finding_ids": doc_to_ids,
     }
     write_lockfile(LOCK_PATH, lock)

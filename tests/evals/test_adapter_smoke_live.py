@@ -17,17 +17,15 @@ pytestmark = pytest.mark.skipif(
 
 async def test_watsonx_smoke(store, tmp_path, monkeypatch):
     import evals.adapters.watsonx_docsqa as wx
-    from evals.models import load_question_set
     from evals.runner import run_eval
 
     monkeypatch.setattr(wx, "SET_PATH", tmp_path / "set.yaml")
     monkeypatch.setattr(wx, "LOCK_PATH", tmp_path / "lock.json")
     lock = await wx.build(project="wx-smoke", kb="v1", max_docs=25)
     assert lock["counts"]["chunks"] > 0
-
-    _, qs = load_question_set(tmp_path / "set.yaml")
-    if not qs:
+    if lock["counts"]["questions"] == 0:
         pytest.skip("no question survived the 25-doc corpus slice")
+
     trimmed = tmp_path / "set3.yaml"
     text = (tmp_path / "set.yaml").read_text()
     # run only the first question: rewrite the set with one entry

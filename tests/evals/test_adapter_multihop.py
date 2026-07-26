@@ -81,3 +81,57 @@ async def test_build_rejects_kb_with_existing_findings(faked, store):
     # Attempting the same build should fail (KB already has findings)
     with pytest.raises(RuntimeError, match="already has findings"):
         await mh.build(project="mh-rerun", kb="v1", sample=3, seed=0)
+
+
+DUP_QUERIES = [
+    {"query": "When did the merger close?", "answer": "Tuesday.",
+     "question_type": "temporal_query",
+     "evidence_list": [{"url": "https://ex.com/a", "fact": "The merger closed on Tuesday."}]},
+    {"query": "When did the merger close?", "answer": "Tuesday.",
+     "question_type": "temporal_query",
+     "evidence_list": [{"url": "https://ex.com/a", "fact": "The merger closed on Tuesday."}]},
+]
+
+
+async def test_duplicate_query_deduped(store, monkeypatch, tmp_path):
+    """Two identical query strings in the sample: keep first occurrence, count the dupe."""
+    def fake_load_hf(name, config, split, revision=None):
+        return (list(CORPUS), "cafebabe") if config == "corpus" else (list(DUP_QUERIES), "cafebabe")
+
+    async def fake_embed_batch(texts):
+        return [[1.0] + [0.0] * 1535 for _ in texts]
+
+    monkeypatch.setattr(mh, "load_hf", fake_load_hf)
+    monkeypatch.setattr("evals.adapters.common.embed_batch", fake_embed_batch)
+    monkeypatch.setattr(mh, "SET_PATH", tmp_path / "set.yaml")
+    monkeypatch.setattr(mh, "LOCK_PATH", tmp_path / "lock.json")
+
+    lock = await mh.build(project="mh-dup", kb="v1", sample=2, seed=0)
+    assert lock["counts"]["questions"] == 1
+    assert len(lock["duplicate_question_ids"]) == 1
+    _, qs = load_question_set(tmp_path / "set.yaml")
+    assert len(qs) == 1
+
+
+BAD_QUERIES = [
+    {"query": "What happened?", "answer": "X.",
+     "question_type": "comparison_query",
+     "evidence_list": [{"url": "https://ex.com/nope", "fact": "no such fact"}]},
+]
+
+
+async def test_all_questions_dropped_raises(store, monkeypatch, tmp_path):
+    """A build where every question's gold doc is absent raises via load_question_set."""
+    def fake_load_hf(name, config, split, revision=None):
+        return (list(CORPUS), "cafebabe") if config == "corpus" else (list(BAD_QUERIES), "cafebabe")
+
+    async def fake_embed_batch(texts):
+        return [[1.0] + [0.0] * 1535 for _ in texts]
+
+    monkeypatch.setattr(mh, "load_hf", fake_load_hf)
+    monkeypatch.setattr("evals.adapters.common.embed_batch", fake_embed_batch)
+    monkeypatch.setattr(mh, "SET_PATH", tmp_path / "set.yaml")
+    monkeypatch.setattr(mh, "LOCK_PATH", tmp_path / "lock.json")
+
+    with pytest.raises(ValueError, match="no questions"):
+        await mh.build(project="mh-alldrop", kb="v1", sample=1, seed=0)

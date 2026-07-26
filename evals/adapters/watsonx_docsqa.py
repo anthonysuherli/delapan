@@ -22,6 +22,7 @@ from evals.adapters.common import (
     write_lockfile,
     write_set_yaml,
 )
+from evals.models import load_question_set
 
 DATASET = "ibm-research/watsonxDocsQA"
 SET_PATH = Path(__file__).parent.parent / "sets" / "watsonx-docsqa-v1.yaml"
@@ -39,7 +40,17 @@ async def build(
     docs = sorted(docs, key=lambda d: d["doc_id"])[: max_docs or len(docs)]
     qa_train, _ = load_hf(DATASET, "question_answers", "train", revision=rev)
     qa_test, _ = load_hf(DATASET, "question_answers", "test", revision=rev)
-    qa = sorted(qa_train + qa_test, key=lambda r: str(r["question_id"]))
+    seen_qids: set[str] = set()
+    duplicate_question_ids: list[str] = []
+    qa: list[dict] = []
+    for row in qa_train + qa_test:  # train+test concat can collide — keep first occurrence
+        qid = str(row["question_id"])
+        if qid in seen_qids:
+            duplicate_question_ids.append(qid)
+            continue
+        seen_qids.add(qid)
+        qa.append(row)
+    qa.sort(key=lambda r: str(r["question_id"]))
 
     chunks: list[Chunk] = []
     for d in docs:
@@ -63,8 +74,10 @@ async def build(
     dropped: list[str] = []
     chunks_by_doc = {c.doc_id for c in chunks}
     for row in qa:
-        gold_docs = [s.strip() for s in str(row["correct_answer_document_ids"]).split(",") if s.strip()]
+        raw_ids = str(row["correct_answer_document_ids"]).split(",")
+        gold_docs = [s.strip() for s in raw_ids if s.strip()]
         ids, _ = gold_chunk_ids(chunks, gold_docs)
+        # `not ids` is load-bearing: empty gold_docs makes all(...) vacuously True
         if not ids or not all(doc in chunks_by_doc for doc in gold_docs):
             dropped.append(str(row["question_id"]))
             continue
@@ -79,6 +92,7 @@ async def build(
         f"# Gold granularity: doc-level (all chunks of gold docs). Do not hand-edit.\n"
     )
     write_set_yaml(SET_PATH, "watsonx-docsqa-v1", questions, header)
+    load_question_set(SET_PATH)  # fail the build loudly if the set is unloadable
 
     doc_to_ids: dict[str, list[str]] = {}
     for c in chunks:
@@ -89,6 +103,7 @@ async def build(
         "kb": f"{project}/{kb}", "max_docs": max_docs,
         "counts": {"docs": len(docs), "chunks": n, "questions": len(questions)},
         "dropped_questions": dropped, "gold_fallback_questions": [],
+        "duplicate_question_ids": duplicate_question_ids,
         "doc_to_finding_ids": doc_to_ids,
     }
     write_lockfile(LOCK_PATH, lock)

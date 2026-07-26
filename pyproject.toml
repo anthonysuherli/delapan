@@ -32,7 +32,7 @@ cloud = [
 dev = ["pytest>=8.4.2", "pytest-asyncio>=1.3.0", "ruff>=0.16.0,<0.17", "pyright>=1.1.409"]
 evals = ["pyyaml>=6.0", "tiktoken>=0.8"]
 evals-hhem = ["transformers>=4.44", "torch>=2.3"]
-evals-adapters = ["datasets>=3.0"]
+evals-adapters = ["datasets>=3.0", "huggingface_hub>=0.24"]
 
 [build-system]
 requires = ["hatchling"]
