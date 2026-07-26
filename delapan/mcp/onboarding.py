@@ -77,4 +77,6 @@ def seed_demo_if_absent() -> None:
     if target.exists() or not BUNDLED_DEMO_DB.exists():
         return
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(BUNDLED_DEMO_DB, target)
+    tmp = target.with_suffix(".db.partial")
+    shutil.copyfile(BUNDLED_DEMO_DB, tmp)
+    tmp.replace(target)  # atomic on POSIX — no partially-copied demo.db can survive

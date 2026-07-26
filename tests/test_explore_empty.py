@@ -33,6 +33,7 @@ async def test_empty_run_reports_empty_status(env, monkeypatch):
 
     assert res["status"] == "empty"
     assert res["count"] == 0
+    assert res["finding_ids"] == []
     assert "reason" in res and "Tavily" in res["reason"]
 
     row = sqlite3.connect(env).execute(

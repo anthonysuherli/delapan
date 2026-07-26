@@ -217,6 +217,7 @@ async def _explore_impl(ctx: TenantContext, prompt: str | None, max_findings: in
             return {
                 "exploration_id": exp_id,
                 "status": "empty",
+                "finding_ids": [],
                 "count": 0,
                 "reason": (
                     "the pipeline produced no findings — search returned nothing "
