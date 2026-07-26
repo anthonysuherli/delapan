@@ -41,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--depth", default="normal", choices=["shallow", "normal", "deep"])
     run_p.add_argument("--out", type=Path, default=Path("evals/runs"))
     run_p.add_argument("--hhem", action="store_true")
+    run_p.add_argument("--oracle-budget", type=int, default=None)
 
     rep_p = sub.add_parser("report")
     rep_p.add_argument("run_dir", type=Path)
@@ -71,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
                 set_path=args.set, project=args.project, kb=args.kb,
                 arms=args.arms.split(","), answer_model=answer_model,
                 judge_model=judge_model, out_dir=args.out, depth=args.depth,
-                use_hhem=args.hhem,
+                use_hhem=args.hhem, oracle_budget=args.oracle_budget,
             )
         )
         print(run_dir)

@@ -89,3 +89,25 @@ async def test_unknown_arm_rejected(store):
     _, kb = await _seed(store)
     with pytest.raises(ValueError, match="unknown arm"):
         await build_context("vibes", store=store, kb_id=kb, question=Q)
+
+
+async def test_oracle_budget_override_prevents_clipping(store):
+    org, pid = store.resolve_project("evals-arms-ob", create=True)
+    kb = store.resolve_kb(org, pid, "main", create=True)
+    # 12 gold chunks x ~900 chars comfortably exceed the 7000-char default budget
+    rows = [
+        {"id": f"g{i:02d}", "org_id": org, "kb_id": kb, "title": f"Gold chunk {i}",
+         "content": f"chunk {i} " + ("x" * 880), "category": "fact", "confidence": 0.5,
+         "tags": [], "provenance": [], "embedding": [float(i == j) for j in range(1536)]}
+        for i in range(12)
+    ]
+    await store.insert_findings(rows)
+    q = Question(id="qb", question="q?", reference_answer="r",
+                 gold_finding_ids=[f"g{i:02d}" for i in range(12)])
+
+    clipped = await build_context("oracle", store=store, kb_id=kb, question=q)
+    assert len(clipped.injected_ids) < 12          # default budget clips
+
+    full = await build_context("oracle", store=store, kb_id=kb, question=q,
+                               oracle_budget=60_000)
+    assert full.injected_ids == [f"g{i:02d}" for i in range(12)]

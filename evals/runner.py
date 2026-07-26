@@ -50,6 +50,7 @@ def _git_sha() -> str:
 async def _one_record(
     q: Question, arm: str, *, store: Store, kb_id: str, depth: str,
     answer_model: str, judge_model: str, predictor: Predictor | None,
+    oracle_budget: int | None = None,
 ) -> dict:
     rec: dict = {
         "question_id": q.id, "question_type": q.type, "arm": arm, "answer": None,
@@ -59,7 +60,10 @@ async def _one_record(
     }
     start = time.monotonic()
     try:
-        ctx = await build_context(arm, store=store, kb_id=kb_id, question=q, depth=depth)
+        ctx = await build_context(
+            arm, store=store, kb_id=kb_id, question=q, depth=depth,
+            oracle_budget=oracle_budget
+        )
         rec.update(
             context_xml=ctx.xml, coverage=ctx.coverage, injected_ids=ctx.injected_ids,
             chars_injected=len(ctx.xml or ""), tokens_injected=count_tokens(ctx.xml or ""),
@@ -89,6 +93,7 @@ async def run_eval(
     out_dir: Path,
     depth: str = "normal",
     use_hhem: bool = False,
+    oracle_budget: int | None = None,
 ) -> Path:
     unknown = set(arms) - VALID_ARMS
     if unknown:
@@ -104,6 +109,7 @@ async def run_eval(
         await _one_record(
             q, arm, store=store, kb_id=ctx.kb_id, depth=depth,
             answer_model=answer_model, judge_model=judge_model, predictor=predictor,
+            oracle_budget=oracle_budget,
         )
         for q in questions
         for arm in arms
@@ -116,7 +122,7 @@ async def run_eval(
         "question_set": str(set_path), "set_name": set_name, "arms": list(arms),
         "question_set_sha256": hashlib.sha256(Path(set_path).read_bytes()).hexdigest(),
         "answer_model": answer_model, "judge_model": judge_model,
-        "tokenizer": TOKENIZER, "depth": depth,
+        "tokenizer": TOKENIZER, "depth": depth, "oracle_budget": oracle_budget,
         "prompts": {
             "grounded_system": GROUNDED_SYSTEM,
             "closed_book_system": CLOSED_BOOK_SYSTEM,

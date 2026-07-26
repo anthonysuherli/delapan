@@ -113,3 +113,16 @@ async def test_run_eval_rejects_unknown_arm(seeded, tmp_path):
             answer_model="m", judge_model="j", out_dir=out_dir,
         )
     assert not out_dir.exists() or not list(out_dir.iterdir())
+
+
+async def test_oracle_budget_recorded_in_manifest(seeded, tmp_path):
+    project, kb = seeded
+    set_path = tmp_path / "set.yaml"
+    set_path.write_text(SET_YAML)
+    run_dir = await run_eval(
+        set_path=set_path, project=project, kb=kb, arms=["oracle"],
+        answer_model="m", judge_model="j", out_dir=tmp_path / "runs",
+        oracle_budget=24_000,
+    )
+    manifest = json.loads((run_dir / "manifest.json").read_text())
+    assert manifest["oracle_budget"] == 24_000

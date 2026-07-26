@@ -58,6 +58,7 @@ async def build_context(
     question: Question,
     depth: str = "normal",
     full_context_cap: int = 60_000,
+    oracle_budget: int | None = None,
 ) -> ArmContext:
     if arm == "closed_book":
         return ArmContext(xml=None, coverage=None, band_counts=None)
@@ -85,7 +86,7 @@ async def build_context(
 
     if arm == "oracle":
         rows = [store.get_finding(kb_id, fid) for fid in question.gold_finding_ids]
-        xml = _render_rows(rows)
+        xml = _render_rows(rows, budget=oracle_budget)
         return ArmContext(xml=xml, coverage=None, band_counts=None, injected_ids=_ids_in(xml))
 
     if arm == "full_context":
