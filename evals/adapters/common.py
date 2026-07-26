@@ -38,7 +38,9 @@ def _finding_id(doc_id: str, index: int) -> str:
 def chunk_doc(
     doc_id: str, title: str, text: str, max_chars: int = 1000
 ) -> list[Chunk]:
-    """Split on paragraph boundaries first, then whitespace — never mid-word."""
+    """Split on paragraph boundaries first, then whitespace — never mid-word.
+    Empty or whitespace-only text yields no chunks. Single tokens >max_chars
+    hard-split (no boundary available)."""
     paras = [p.strip() for p in text.split("\n\n") if p.strip()]
     pieces: list[str] = []
     buf = ""
@@ -51,6 +53,7 @@ def chunk_doc(
             buf = ""
         while len(p) > max_chars:  # oversized para: split on whitespace
             cut = p.rfind(" ", 0, max_chars)
+            # a single token >max_chars has no boundary — hard split only option
             cut = cut if cut > 0 else max_chars
             pieces.append(p[:cut].rstrip())
             p = p[cut:].lstrip()
@@ -58,7 +61,7 @@ def chunk_doc(
     if buf:
         pieces.append(buf)
     if not pieces:
-        pieces = [text.strip() or text]
+        return []
     total = len(pieces)
     return [
         Chunk(

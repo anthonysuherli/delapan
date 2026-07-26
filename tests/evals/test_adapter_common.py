@@ -107,3 +107,14 @@ def test_load_hf_missing_dep_actionable(monkeypatch):
 
     with pytest.raises(ImportError, match="evals-adapters"):
         load_hf("x/y", "corpus", "train")
+
+
+def test_chunk_doc_empty_and_whitespace_yield_no_chunks():
+    assert chunk_doc("d", "T", "") == []
+    assert chunk_doc("d", "T", "   \n\n  ") == []
+
+
+def test_chunk_doc_unbroken_run_hard_splits():
+    chunks = chunk_doc("d", "T", "x" * 1500, max_chars=1000)
+    assert [len(c.text) for c in chunks] == [1000, 500]  # documented exception:
+    # a boundary-free token cannot satisfy the no-mid-word rule
