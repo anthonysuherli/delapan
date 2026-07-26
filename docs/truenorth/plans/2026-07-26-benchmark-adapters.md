@@ -62,7 +62,7 @@ pyproject.toml          # evals-adapters extra (Task 2)
 - Consumes: existing `build_context(arm, *, store, kb_id, question, depth, full_context_cap)`, `_render_rows(rows, budget=None)`, `run_eval(...)`.
 - Produces: `build_context(..., oracle_budget: int | None = None)`; `run_eval(..., oracle_budget: int | None = None)`; manifest key `"oracle_budget": oracle_budget` (null when unset); CLI `--oracle-budget INT` (default None).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/evals/test_arms.py`:
 
@@ -105,12 +105,12 @@ async def test_oracle_budget_recorded_in_manifest(seeded, tmp_path):
     assert manifest["oracle_budget"] == 24_000
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `.venv/bin/pytest tests/evals/test_arms.py::test_oracle_budget_override_prevents_clipping tests/evals/test_runner.py::test_oracle_budget_recorded_in_manifest -v`
 Expected: FAIL — `build_context() got an unexpected keyword argument 'oracle_budget'` / `run_eval() got an unexpected keyword argument`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `evals/arms.py`, change the signature and oracle branch (only these lines):
 
@@ -140,12 +140,12 @@ In `evals/runner.py`: add `oracle_budget: int | None = None` to `run_eval`'s key
 
 In `evals/__main__.py`: `run_p.add_argument("--oracle-budget", type=int, default=None)` and pass `oracle_budget=args.oracle_budget` in the `run` branch's `run_eval` call.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/evals -q && .venv/bin/ruff check evals tests/evals`
 Expected: all pass (47+), ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/arms.py evals/runner.py evals/__main__.py tests/evals/test_arms.py tests/evals/test_runner.py
@@ -172,7 +172,7 @@ git commit -m "feat(evals): oracle_budget override through arms, runner, CLI"
   - `write_set_yaml(path: Path, name: str, questions: list[dict], header: str) -> None`
   - `write_lockfile(path: Path, lock: dict) -> None` (json, indent 2, sort_keys)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_adapter_common.py
@@ -266,12 +266,12 @@ def test_load_hf_missing_dep_actionable(monkeypatch):
         load_hf("x/y", "corpus", "train")
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/evals/test_adapter_common.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'evals.adapters'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `evals/adapters/__init__.py`: empty.
 
@@ -422,12 +422,12 @@ In `pyproject.toml`, after the `evals-hhem` line add:
 evals-adapters = ["datasets>=3.0"]
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/evals/test_adapter_common.py -v && .venv/bin/ruff check evals tests/evals`
 Expected: 8 PASS, ruff clean (no `datasets` installed — the import-error test fakes it)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/adapters tests/evals/test_adapter_common.py pyproject.toml
@@ -447,7 +447,7 @@ git commit -m "feat(evals): adapter common — chunker, gold mapping, hf loader,
 - Produces: `async build(*, project: str = "delapan-evals", kb: str = "watsonx-docsqa", revision: str | None = None, max_docs: int | None = None) -> dict` (the lockfile dict; `max_docs` is a smoke-test knob, recorded in the lockfile) and a `python -m evals.adapters.watsonx_docsqa` CLI. Outputs: set yaml `evals/sets/watsonx-docsqa-v1.yaml`, lockfile `evals/adapters/watsonx-docsqa.lock.json`.
 - Dataset constants: `DATASET = "ibm-research/watsonxDocsQA"`; corpus config `corpus`/split `train` with fields `doc_id`, `title`, `document`; QA config `question_answers`, splits `train` + `test`, fields `question_id`, `question`, `correct_answer`, `correct_answer_document_ids` (comma-separated string).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_adapter_watsonx.py
@@ -519,12 +519,12 @@ async def test_max_docs_smoke_knob(faked, store):
     assert lock["dropped_questions"] == ["t2", "t3"]    # D2 now missing too
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/evals/test_adapter_watsonx.py -v`
 Expected: FAIL with `ModuleNotFoundError` (no `evals.adapters.watsonx_docsqa`)
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # evals/adapters/watsonx_docsqa.py
@@ -635,12 +635,12 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/evals/test_adapter_watsonx.py -v && .venv/bin/ruff check evals tests/evals`
 Expected: 2 PASS, ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/adapters/watsonx_docsqa.py tests/evals/test_adapter_watsonx.py
@@ -663,7 +663,7 @@ git commit -m "feat(evals): watsonxDocsQA adapter (doc-level gold)"
 - `question_type` mapping: contains `"null"` → `unanswerable` (empty gold, empty reference); contains `"temporal"` → `temporal`; contains `"comparison"` or `"inference"` → `multi-hop`.
 - Stratified seeded sampling: group queries by raw `question_type`, `random.Random(seed).sample` proportionally (at least 1 per non-empty group; remainder to the largest groups), deterministic given (revision, sample, seed).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_adapter_multihop.py
@@ -735,12 +735,12 @@ async def test_sampling_is_deterministic_and_stratified(faked, store):
     assert len(lock1["sampled_question_ids"]) == 2
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest tests/evals/test_adapter_multihop.py -v`
 Expected: FAIL with `ModuleNotFoundError` (no `evals.adapters.multihop_rag`)
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 # evals/adapters/multihop_rag.py
@@ -914,12 +914,12 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/evals/test_adapter_multihop.py -v && .venv/bin/ruff check evals tests/evals`
 Expected: 2 PASS, ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/adapters/multihop_rag.py tests/evals/test_adapter_multihop.py
@@ -938,7 +938,7 @@ git commit -m "feat(evals): MultiHop-RAG adapter (evidence-narrowed gold, null->
 **Interfaces:**
 - Consumes: both adapters + `run_eval`.
 
-- [ ] **Step 1: Write the opt-in smoke test**
+- [x] **Step 1: Write the opt-in smoke test**
 
 ```python
 # tests/evals/test_adapter_smoke_live.py
@@ -994,21 +994,21 @@ async def test_watsonx_smoke(store, tmp_path, monkeypatch):
     assert len(records) == 3 and all(not r["unscored"] for r in records)
 ```
 
-- [ ] **Step 2: Verify it is skipped in the hermetic suite**
+- [x] **Step 2: Verify it is skipped in the hermetic suite**
 
 Run: `.venv/bin/pytest tests/evals -q`
 Expected: all pass, `test_adapter_smoke_live` SKIPPED (plus the existing smoke skip)
 
-- [ ] **Step 3: README**
+- [x] **Step 3: README**
 
 In the `evals/` row of the "What's inside" table, extend the description to end with: `; benchmark adapters for watsonxDocsQA + MultiHop-RAG (python -m evals.adapters.<name>)`.
 
-- [ ] **Step 4: Full gate**
+- [x] **Step 4: Full gate**
 
 Run: `.venv/bin/pytest && .venv/bin/ruff check evals tests/evals`
 Expected: failure count unchanged vs. the 2-failure baseline; evals suite fully green; ruff clean on evals paths (repo-wide ruff drift is a known separate issue)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/evals/test_adapter_smoke_live.py README.md
