@@ -37,14 +37,23 @@ def kb_not_found_card(
     project: str, kb: str, exc: Exception, store: Store | None = None
 ) -> dict:
     """KB-not-found result with onboarding guidance instead of a bare error."""
+    guidance = (
+        f"No KB exists yet for {project}/{kb}. Run /delapan:explore (the "
+        "delapan_explore tool) with a prompt to research and seed it"
+    )
+    from delapan.store import active_backend
+
+    if active_backend() == "local":
+        guidance += (
+            " — needs AI_GATEWAY_API_KEY and TAVILY_API_KEY in the plugin root's .env."
+        )
+    else:
+        guidance += "."
+
     card = {
         "error": f"KB not found ({project}/{kb}): {exc}",
         "coverage": "gap",
-        "onboarding": (
-            f"No KB exists yet for {project}/{kb}. Run /delapan:explore (the "
-            "delapan_explore tool) with a prompt to research and seed it — needs "
-            "AI_GATEWAY_API_KEY and TAVILY_API_KEY in the plugin root's .env."
-        ),
+        "onboarding": guidance,
     }
     if _demo_available(store):
         card["try_demo"] = (

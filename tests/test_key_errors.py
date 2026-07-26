@@ -58,3 +58,22 @@ async def test_explore_preflight_blocks_before_run(keyless_env):
     res = await s.delapan_explore("p2", "k2", prompt="topic")
     assert "explore needs credentials" in res["error"]
     assert "TAVILY_API_KEY" in res["error"] and "AI_GATEWAY_API_KEY" in res["error"]
+
+
+@pytest.mark.asyncio
+async def test_explore_preflight_omits_env_advice_on_cloud_tier(keyless_env, monkeypatch):
+    monkeypatch.setenv("DELAPAN_BACKEND", "cloud")
+    import delapan.mcp.server as s
+    from delapan.core.agent.state import TenantContext
+
+    ctx = TenantContext(
+        user_id="u",
+        org_id="o",
+        project_id="p",
+        kb_id="k",
+        thread_id="t",
+        access_token="tok",
+    )
+    res = await s._explore_impl(ctx, "topic", None)
+    assert ".env" not in res["error"]
+    assert "TAVILY_API_KEY" in res["error"] and "AI_GATEWAY_API_KEY" in res["error"]

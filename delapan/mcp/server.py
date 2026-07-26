@@ -45,7 +45,7 @@ from delapan.core.knowledge_graph.builder import _gather_findings, build_graph, 
 from delapan.core.knowledge_graph.schema import KGSchema, propose_schema, validate_schema
 from delapan.core.knowledge_graph.service import kg_schema_view
 from delapan.core.memory.persist import resolve_and_persist
-from delapan.store import get_store
+from delapan.store import active_backend, get_store
 
 from .banner import DELAPAN_BANNER
 from .onboarding import kb_not_found_card, seed_demo_if_absent
@@ -166,11 +166,13 @@ def _clear_archive(store, ctx) -> bool:
 async def _explore_impl(ctx: TenantContext, prompt: str | None, max_findings: int | None) -> dict:
     missing = missing_pipeline_keys()
     if missing:
-        return {
-            "error": "explore needs credentials: set "
-            + " and ".join(missing)
-            + " in the plugin root's .env (see .env.example) — resume works without them."
-        }
+        names = " and ".join(missing)
+        if active_backend() == "local":
+            return {
+                "error": f"explore needs credentials: set {names} in the plugin root's "
+                ".env (see .env.example) — resume works without them."
+            }
+        return {"error": f"explore is unavailable: the server is missing {names}."}
     store = get_store(ctx.access_token, org_id=ctx.org_id)
     # Promptless: consume the KB's top curation gap in place of a caller prompt.
     # Resolved before any archive flip so an empty backlog changes nothing.

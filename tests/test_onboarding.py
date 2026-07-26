@@ -40,6 +40,15 @@ def test_card_survives_store_none():
     assert "onboarding" in card and "try_demo" not in card
 
 
+def test_card_omits_env_advice_on_cloud_tier(monkeypatch):
+    monkeypatch.setenv("DELAPAN_BACKEND", "cloud")
+    from delapan.mcp.onboarding import kb_not_found_card
+
+    card = kb_not_found_card("a", "b", ValueError("x"), store=None)
+    assert "/delapan:explore" in card["onboarding"]
+    assert ".env" not in card["onboarding"]
+
+
 @pytest.mark.asyncio
 async def test_resume_tool_returns_card(local_store, monkeypatch):
     import delapan.mcp.server as s
