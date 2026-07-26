@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -44,24 +45,25 @@ async def test_stranger_round_trip(tmp_path):
         "UV_PROJECT_ENVIRONMENT": str(REPO / ".venv"),
     }
     params = StdioServerParameters(command=str(WRAPPER), env=env)
-    async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
-        await session.initialize()
+    async with asyncio.timeout(300):  # bound cold uv resolve + handshake; hang → fail, not wedge
+        async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
 
-        projects = _payload(await session.call_tool("delapan_projects", {}))
-        assert any(p["project"] == "delapan" for p in projects["projects"]), (
-            "demo KB must be seeded on first start"
-        )
-
-        resume = _payload(
-            await session.call_tool(
-                "delapan_resume", {"project": "delapan", "kb": "demo"}
+            projects = _payload(await session.call_tool("delapan_projects", {}))
+            assert any(p["project"] == "delapan" for p in projects["projects"]), (
+                "demo KB must be seeded on first start"
             )
-        )
-        assert "<synopsis>" in resume["preamble"], "zero-key resume must render the demo"
 
-        card = _payload(
-            await session.call_tool(
-                "delapan_resume", {"project": "ghost", "kb": "ghost"}
+            resume = _payload(
+                await session.call_tool(
+                    "delapan_resume", {"project": "delapan", "kb": "demo"}
+                )
             )
-        )
-        assert "onboarding" in card and "try_demo" in card
+            assert "<synopsis>" in resume["preamble"], "zero-key resume must render the demo"
+
+            card = _payload(
+                await session.call_tool(
+                    "delapan_resume", {"project": "ghost", "kb": "ghost"}
+                )
+            )
+            assert "onboarding" in card and "try_demo" in card
