@@ -112,7 +112,13 @@ def _topic_from_row(r) -> dict:
 LIST_DEFAULT_LIMIT = 20
 LIST_MAX_LIMIT = 1000
 
-_SCHEMA = """
+# vec0 pre-allocates chunk_size × 1536 dims × 4B per table on first insert —
+# ~6.3MB each at the default 1024. Local KBs are small, so size chunks for tens
+# of rows (64 × 1536 × 4B ≈ 393KB); larger KBs just allocate more chunks. Must
+# be divisible by 8. Applies at CREATE only — existing DBs keep their chunking.
+_VEC_CHUNK_SIZE = 64
+
+_SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY, org_id TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL, archived_at TEXT);
 CREATE TABLE IF NOT EXISTS kbs (
@@ -123,7 +129,8 @@ CREATE TABLE IF NOT EXISTS findings (
   title TEXT, content TEXT, category TEXT, confidence REAL,
   tags TEXT, provenance TEXT, created_at TEXT NOT NULL,
   valid_from TEXT, invalidated_at TEXT, superseded_by TEXT);
-CREATE VIRTUAL TABLE IF NOT EXISTS vec_findings USING vec0(finding_id TEXT, embedding float[1536]);
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_findings USING vec0(
+  finding_id TEXT, embedding float[1536], chunk_size={_VEC_CHUNK_SIZE});
 CREATE TABLE IF NOT EXISTS kb_synopsis (
   kb_id TEXT PRIMARY KEY, org_id TEXT, content TEXT,
   finding_count_at_build INTEGER, model TEXT, built_at TEXT);
@@ -133,7 +140,8 @@ CREATE TABLE IF NOT EXISTS explorations (
 CREATE TABLE IF NOT EXISTS kg_nodes (
   id TEXT PRIMARY KEY, org_id TEXT, kb_id TEXT NOT NULL,
   type TEXT, label TEXT, properties TEXT, grounded_in TEXT, created_at TEXT NOT NULL);
-CREATE VIRTUAL TABLE IF NOT EXISTS vec_kg_nodes USING vec0(node_id TEXT, embedding float[1536]);
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_kg_nodes USING vec0(
+  node_id TEXT, embedding float[1536], chunk_size={_VEC_CHUNK_SIZE});
 CREATE TABLE IF NOT EXISTS kg_edges (
   id TEXT PRIMARY KEY, org_id TEXT, kb_id TEXT NOT NULL,
   source_node_id TEXT, target_node_id TEXT, relation TEXT,
@@ -164,7 +172,8 @@ CREATE TABLE IF NOT EXISTS curation_topics (
   first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, consumed_at TEXT, resolved_at TEXT);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_curation_topics_norm ON curation_topics(kb_id, query_norm);
 CREATE INDEX IF NOT EXISTS idx_curation_topics_kb ON curation_topics(kb_id);
-CREATE VIRTUAL TABLE IF NOT EXISTS vec_curation_topics USING vec0(topic_id TEXT, embedding float[1536]);
+CREATE VIRTUAL TABLE IF NOT EXISTS vec_curation_topics USING vec0(
+  topic_id TEXT, embedding float[1536], chunk_size={_VEC_CHUNK_SIZE});
 """
 
 # Post-schema migrations: ADD COLUMN statements for older DBs.
