@@ -48,7 +48,7 @@ from delapan.core.memory.persist import resolve_and_persist
 from delapan.store import get_store
 
 from .banner import DELAPAN_BANNER
-from .onboarding import kb_not_found_card
+from .onboarding import kb_not_found_card, seed_demo_if_absent
 from .tenancy import resolve_store, resolve_tenant
 
 logger = logging.getLogger(__name__)
@@ -463,6 +463,7 @@ async def delapan_archive(project: str, kb: str | None = None, archived: bool = 
 
 def main() -> None:
     get_settings()  # fail fast if infra env is missing
+    seed_demo_if_absent()
     mcp.run()
 
 

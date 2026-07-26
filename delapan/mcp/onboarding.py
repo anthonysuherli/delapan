@@ -9,6 +9,7 @@ self-suppresses wherever no demo project exists (cloud never seeds one).
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -51,3 +52,20 @@ def kb_not_found_card(
             "KB about delapan itself; its resume card works with no keys configured."
         )
     return card
+
+
+def seed_demo_if_absent() -> None:
+    """First run on the local tier: copy the bundled demo KB into place.
+
+    No-op whenever the target DB already exists, the bundled artifact is
+    missing, or the active backend is the cloud tier."""
+    from delapan.store import active_backend
+    from delapan.store.sqlite import _default_db_path
+
+    if active_backend() != "local":
+        return
+    target = Path(_default_db_path())
+    if target.exists() or not BUNDLED_DEMO_DB.exists():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(BUNDLED_DEMO_DB, target)
