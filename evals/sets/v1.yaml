@@ -1,0 +1,414 @@
+# Frozen eval set v1 — curated 2026-07-26 from delapan-evals/public-v1 corpus
+# (drafts: sonnet-4.6, leakage-gated; curation dropped ambiguous-referent and
+# near-duplicate drafts; unanswerable rows are hand-written abstention probes)
+name: public-v1
+questions:
+- id: q-e824e81d8e19400799d99035fe5da108
+  question: In which SDK version was Claude 3.7 first made available, and when was that version released?
+  reference_answer: Claude 3.7 was added in version 0.47.0, which was released on February 24, 2025.
+  gold_finding_ids:
+  - e824e81d8e19400799d99035fe5da108
+  type: single-hop
+- id: q-8df50edb14ab4ff99df25428b9ef8a9c
+  question: Which version of the SDK introduced Claude-Sonnet-4-5, and when was that version released?
+  reference_answer: Claude-Sonnet-4-5 was introduced in SDK version 0.69.0, which was released on September
+    29, 2025.
+  gold_finding_ids:
+  - 8df50edb14ab4ff99df25428b9ef8a9c
+  type: single-hop
+- id: q-5928ca64299c4ac7abd12293339123ba
+  question: Which version of the SDK first introduced Claude-Opus-5, and when was it released?
+  reference_answer: Claude-Opus-5 was introduced in SDK version 0.120.0, released on July 24, 2026.
+  gold_finding_ids:
+  - 5928ca64299c4ac7abd12293339123ba
+  type: single-hop
+- id: q-505acf2588e040239dda07546a7799e0
+  question: Which version of the software first introduced support for the o1 model, and when was it released?
+  reference_answer: Support for the o1 model was introduced in version 1.45.0, released on September 12,
+    2024.
+  gold_finding_ids:
+  - 505acf2588e040239dda07546a7799e0
+  type: single-hop
+- id: q-e8ff98518bfb40bf99613ccf85747bec
+  question: Which two new OpenAI reasoning models were introduced in version 1.75.0 of the tool released
+    on April 16, 2025?
+  reference_answer: The two models added in version 1.75.0 were o3 and o4-mini.
+  gold_finding_ids:
+  - e8ff98518bfb40bf99613ccf85747bec
+  type: single-hop
+- id: q-58b1dbf18da9403eabf435f6d74e147e
+  question: Which version of the software first introduced support for the GPT-4.5 Preview model, and
+    when was it released?
+  reference_answer: Support for the GPT-4.5 Preview model was introduced in version 1.65.0, released on
+    February 27, 2025.
+  gold_finding_ids:
+  - 58b1dbf18da9403eabf435f6d74e147e
+  type: single-hop
+- id: q-2c7df88b8cf0490092d08eaf6ce40bc6
+  question: When was the Realtime API officially made generally available, and in which version was this
+    shipped?
+  reference_answer: The Realtime API reached general availability on September 8, 2025, introduced in
+    version 1.107.0 of the SDK.
+  gold_finding_ids:
+  - 2c7df88b8cf0490092d08eaf6ce40bc6
+  type: single-hop
+- id: q-b24672ac24de41bd80d38e20d324f9c8
+  question: What new capabilities were added to the Sora API in version 2.27.0?
+  reference_answer: 'Version 2.27.0 of the Sora API, released on March 13, 2026, introduced three improvements:
+    a character API, support for video extensions and edits, and higher resolution exports.'
+  gold_finding_ids:
+  - b24672ac24de41bd80d38e20d324f9c8
+  type: single-hop
+- id: q-f470af2955c54d0c9d32f1e84a9c265e
+  question: What new AI model and tools were introduced in version 2.25.0 released on March 5, 2026?
+  reference_answer: Version 2.25.0, released on March 5, 2026, introduced the GPT-5.4 model, a tool search
+    tool, and a new computer tool.
+  gold_finding_ids:
+  - f470af2955c54d0c9d32f1e84a9c265e
+  type: single-hop
+- id: q-512a05a08ddd46e3a962eee5c7d93696
+  question: When was Amazon Bedrock Responses support introduced in the SDK, and what version included
+    it?
+  reference_answer: Amazon Bedrock Responses support was added in version 2.40.0, released on June 1,
+    2026.
+  gold_finding_ids:
+  - 512a05a08ddd46e3a962eee5c7d93696
+  type: single-hop
+- id: q-ab41db8b8a394301982d44baa1a54597
+  question: What version introduced the gpt-5.6-sol updates and when was it released?
+  reference_answer: The gpt-5.6-sol updates were introduced in version 2.45.0, released on July 9, 2026.
+  gold_finding_ids:
+  - ab41db8b8a394301982d44baa1a54597
+  type: single-hop
+- id: q-61c7439e887a41a48a75039c15f38e2b
+  question: What new admin API support was added in OpenAI Python SDK version 2.48.0?
+  reference_answer: Version 2.48.0, released on July 23, 2026, added support for spend_limit admin APIs.
+  gold_finding_ids:
+  - 61c7439e887a41a48a75039c15f38e2b
+  type: single-hop
+- id: q-2a4154a1d4c34a848c1cd3f909c4f548
+  question: Where can I find the API reference documentation for LangChain's Python library?
+  reference_answer: The LangChain Python API reference is hosted at reference.langchain.com/python.
+  gold_finding_ids:
+  - 2a4154a1d4c34a848c1cd3f909c4f548
+  type: single-hop
+- id: q-2c5243260b0043ec9600fc64c45e9ef6
+  question: What types of components does LangChain Core provide interfaces for?
+  reference_answer: 'LangChain Core provides interfaces for five types of components: models, embeddings,
+    vector stores, retrievers, and tools.'
+  gold_finding_ids:
+  - 2c5243260b0043ec9600fc64c45e9ef6
+  type: single-hop
+- id: q-eb1ef90e84a946a99c9b0fdafd8c853e
+  question: What are the three main capabilities that the LangSmith platform provides for working with
+    LLM applications?
+  reference_answer: LangSmith offers agent evaluations, observability, and debugging tools for LLM applications.
+    It also supports deploying and scaling agents for long-running, stateful workflows.
+  gold_finding_ids:
+  - eb1ef90e84a946a99c9b0fdafd8c853e
+  type: single-hop
+- id: q-3dfc4613197d4dd081815b1e06bb3988
+  question: What programming languages does the LangChain.js library support?
+  reference_answer: LangChain.js supports both JavaScript and TypeScript, serving as the equivalent of
+    the Python LangChain library for JS/TS developers.
+  gold_finding_ids:
+  - 3dfc4613197d4dd081815b1e06bb3988
+  type: single-hop
+- id: q-9061dfa218fc4cb2ab367e8412690eb8
+  question: What is LangGraph primarily designed to help developers build?
+  reference_answer: LangGraph is a low-level agent orchestration framework designed for building controllable
+    agent workflows.
+  gold_finding_ids:
+  - 9061dfa218fc4cb2ab367e8412690eb8
+  type: single-hop
+- id: q-695e61ed9939427c914a05e52f45fe6c
+  question: What are the three main capabilities provided by the Deep Agents package?
+  reference_answer: 'The Deep Agents package, which is a higher-level package built on top of LangChain,
+    offers three core capabilities: planning, subagents, and file system usage.'
+  gold_finding_ids:
+  - 695e61ed9939427c914a05e52f45fe6c
+  type: single-hop
+- id: q-8f5da235dab042298cbddfa9106dd5f2
+  question: Which JSON parser was introduced in Pydantic 2.5.0, and when was that version released?
+  reference_answer: Pydantic 2.5.0, released on November 13, 2023, introduced the jiter JSON parser.
+  gold_finding_ids:
+  - 8f5da235dab042298cbddfa9106dd5f2
+  type: single-hop
+- id: q-ae5727b4622f46d7bc08f8a3769cf3ac
+  question: Which version of Pydantic first introduced support for Python 3.13, and when was it released?
+  reference_answer: Pydantic 2.8.0 was the first version to support Python 3.13, released on July 1, 2024.
+  gold_finding_ids:
+  - ae5727b4622f46d7bc08f8a3769cf3ac
+  type: single-hop
+- id: q-2e75cfaf20cb4785bfc39aaab3d814bd
+  question: Which UUID versions beyond the classic ones did Pydantic gain support for in version 2.11.0b1?
+  reference_answer: Pydantic 2.11.0b1 added support for UUID versions 6, 7, and 8.
+  gold_finding_ids:
+  - 2e75cfaf20cb4785bfc39aaab3d814bd
+  type: single-hop
+- id: q-0babbd925b8c4d849716b2f1d7339f18
+  question: Which version of Pydantic first introduced support for Python 3.14?
+  reference_answer: Pydantic 2.12.0a1, released on July 26, 2025, was the first version to add initial
+    support for Python 3.14.
+  gold_finding_ids:
+  - 0babbd925b8c4d849716b2f1d7339f18
+  type: single-hop
+- id: q-62d5a49d666d440caa02eab839cf81ab
+  question: Which version of Pydantic introduced support for PEP 728, and when was it released?
+  reference_answer: Pydantic version 2.12.0b1 added support for PEP 728, released on October 3, 2025.
+  gold_finding_ids:
+  - 62d5a49d666d440caa02eab839cf81ab
+  type: single-hop
+- id: q-d990d57f407b49caa91d29dba7e32dc3
+  question: What is the minimum Rust version required to build Pydantic 2.13.0b1?
+  reference_answer: Pydantic 2.13.0b1 requires at least Rust version 1.88, and it uses the 2024 Rust edition.
+  gold_finding_ids:
+  - d990d57f407b49caa91d29dba7e32dc3
+  type: single-hop
+- id: q-dc0342a14fa544b997105019515eacc8
+  question: Which repository was merged into Pydantic in version 2.13.0b1, and when was this release made
+    available?
+  reference_answer: The pydantic-core repository was merged into Pydantic starting with version 2.13.0b1,
+    which was released on February 23, 2026.
+  gold_finding_ids:
+  - dc0342a14fa544b997105019515eacc8
+  type: single-hop
+- id: q-b3275711392448198c841379294d30fc
+  question: Which version of Pydantic first dropped support for Python 3.9, and when was it released?
+  reference_answer: Pydantic 2.14.0a1 dropped Python 3.9 support, released on May 22, 2026.
+  gold_finding_ids:
+  - b3275711392448198c841379294d30fc
+  type: single-hop
+- id: q-c97ea209701e47129e5089db252c361d
+  question: Which AI models and GPU hardware types are included in the vLLM end-to-end performance validation
+    benchmarks run on PyTorch CI?
+  reference_answer: 'The vLLM benchmark workflow covers three models — Llama3, Llama4, and Mixtral — and
+    runs on two hardware platforms: NVIDIA H100 and AMD MI300x GPUs.'
+  gold_finding_ids:
+  - c97ea209701e47129e5089db252c361d
+  type: single-hop
+- id: q-f33d3ff44f284d188cdbcbb0dca52364
+  question: What types of changes are permitted to be cherry-picked into vLLM release branches?
+  reference_answer: The allowed cherry-pick changes for vLLM release branches include regression fixes,
+    critical fixes covering issues like silent incorrectness, crashes, deadlocks, and memory leaks, fixes
+    to new features introduced in a recent release, documentation improvements, and release branch specific
+    changes. Feature work is explicitly prohibited, and all pull requests must be merged into the main
+    trunk before being cherry-picked, with the exception of release branch specific changes.
+  gold_finding_ids:
+  - f33d3ff44f284d188cdbcbb0dca52364
+  type: single-hop
+- id: q-0e0ecfc292b243e4bff63c913fb64655
+  question: In the vLLM release process, what happens when the final version tag (e.g., vX.Y.Z) is pushed
+    — does it trigger a build?
+  reference_answer: No, pushing the final vX.Y.Z tag does not trigger a build. It is only used for publishing
+    release notes and attaching release assets. The actual build is triggered by pushing an RC tag such
+    as vX.Y.Z-rc1.
+  gold_finding_ids:
+  - 0e0ecfc292b243e4bff63c913fb64655
+  type: single-hop
+- id: q-e2f74c58f87c463cab4fc31f6a13a34c
+  question: What change to versioning did vLLM introduce starting with v0.12.0?
+  reference_answer: Starting with v0.12.0, vLLM shifted its regular release cadence to increment the minor
+    version number instead of the patch version number for routine releases.
+  gold_finding_ids:
+  - e2f74c58f87c463cab4fc31f6a13a34c
+  type: single-hop
+- id: q-c2945bdb2ac544b584122a9edb6c7656
+  question: 'Which specific lint rule received a performance improvement in PR #27047?'
+  reference_answer: The `unnecessary-future-import` rule was sped up in that pull request.
+  gold_finding_ids:
+  - c2945bdb2ac544b584122a9edb6c7656
+  type: single-hop
+- id: q-06ff082a16cf449aaf4610383b675536
+  question: What formatting fix was applied to Ruff suppression comments?
+  reference_answer: 'A space was added after the colon in Ruff suppression comments, as part of PR #27123.'
+  gold_finding_ids:
+  - 06ff082a16cf449aaf4610383b675536
+  type: single-hop
+- id: q-376f084f92ae4fec85c84e1aabd82cfa
+  question: Which typing module source does the Up019 rule now recognize beyond the standard library?
+  reference_answer: Up019 now recognizes typing_extensions.Text in addition to typing.Text.
+  gold_finding_ids:
+  - 376f084f92ae4fec85c84e1aabd82cfa
+  type: single-hop
+- id: q-74628cddb92c479fb10dedcd342fbcc3
+  question: Which rule codes were stabilized in version 0.16.0 of the linter?
+  reference_answer: 'The rules stabilized in v0.16.0 are: AIR303, CPY001, FURB164, FURB192, ISC004, LOG004,
+    PLE0304, PLR0917, PLR1708, RUF036, RUF063, and RUF068.'
+  gold_finding_ids:
+  - 74628cddb92c479fb10dedcd342fbcc3
+  type: single-hop
+- id: q-d43726bddcdd42a9867cc76eb553243f
+  question: Is the feature that formats Python code blocks in Markdown files turned on by default?
+  reference_answer: Yes, the Markdown Code Block Formatting feature, which handles formatting of Python
+    code blocks in Markdown files, is enabled by default.
+  gold_finding_ids:
+  - d43726bddcdd42a9867cc76eb553243f
+  type: single-hop
+- id: q-83f741e017ed4d1093afe1ce680042c6
+  question: What date was Ruff version 0.16.0 released?
+  reference_answer: Ruff 0.16.0 was released on July 23, 2026.
+  gold_finding_ids:
+  - 83f741e017ed4d1093afe1ce680042c6
+  type: single-hop
+- id: q-0c7971107bb244a88f010257129ba26b
+  question: What new build requirement was introduced for Windows x86-64 and i686 targets in uv 0.11.0?
+  reference_answer: Starting with uv 0.11.0, building for x86-64 and i686 Windows targets requires NASM,
+    due to the switch to the aws-lc crypto backend.
+  gold_finding_ids:
+  - 0c7971107bb244a88f010257129ba26b
+  type: single-hop
+- id: q-9c1e2a21447e48f7b2fec2b83a1f1be4
+  question: What security flaw was patched in uv version 0.11.6?
+  reference_answer: uv 0.11.6, released on April 9, 2026, fixed a vulnerability tracked as GHSA-pjjw-68hj-v9mw
+    that allowed arbitrary file deletion during package uninstallation by exploiting malformed RECORD
+    entries.
+  gold_finding_ids:
+  - 9c1e2a21447e48f7b2fec2b83a1f1be4
+  type: single-hop
+- id: q-bda20c7e65074692a1b75509da6c7924
+  question: How many security vulnerabilities were patched in uv version 0.11.15, and what kinds of issues
+    were they?
+  reference_answer: 'Two security vulnerabilities were fixed in uv 0.11.15, released on 2026-05-18: a
+    TAR parser differential issue (GHSA-3cv2-h65g-fgmm) and an entry points escaping scripts directory
+    issue (GHSA-4gg8-gxpx-9rph).'
+  gold_finding_ids:
+  - bda20c7e65074692a1b75509da6c7924
+  type: single-hop
+- id: q-840906a702154d12a7fc65997f6d3fe8
+  question: Which version of uv introduced support for PEP 794, and what new features were added to the
+    uv-build command alongside it?
+  reference_answer: uv version 0.11.17, released on 2026-05-28, introduced support for PEP 794 and added
+    the import-names and import-namespaces features to the uv-build command.
+  gold_finding_ids:
+  - 840906a702154d12a7fc65997f6d3fe8
+  type: single-hop
+- id: q-21e394547378460c970df15ba3bcc155
+  question: Which new platforms were added in uv version 0.11.19, and what CPython version was introduced
+    alongside them?
+  reference_answer: uv 0.11.19, released on June 3, 2026, added support for PyEmscripten (PEP 783) and
+    Pyodide 2025 as new platforms, and introduced CPython version 3.15.0b2.
+  gold_finding_ids:
+  - 21e394547378460c970df15ba3bcc155
+  type: single-hop
+- id: q-3f01221adcab49539a47ce6883adfcf5
+  question: What new audit output format was introduced in uv version 0.11.22?
+  reference_answer: SARIF was introduced as a new audit output format in uv 0.11.22, released on June
+    18, 2026.
+  gold_finding_ids:
+  - 3f01221adcab49539a47ce6883adfcf5
+  type: single-hop
+- id: q-6af38c61e9224279894ca7fe5bbc4b52
+  question: What CUDA version does the new PyTorch backend support in uv 0.11.29?
+  reference_answer: The new PyTorch backend introduced in uv 0.11.29 supports CUDA 13.2.
+  gold_finding_ids:
+  - 6af38c61e9224279894ca7fe5bbc4b52
+  type: single-hop
+- id: q-969f788b07a7421284b20dda28a053b0
+  question: What two new configuration settings were introduced in uv version 0.11.31?
+  reference_answer: 'Version 0.11.31 of uv, released on 2026-07-21, introduced two new settings: ''audit.malware-check''
+    and ''audit.malware-check-url''.'
+  gold_finding_ids:
+  - 969f788b07a7421284b20dda28a053b0
+  type: single-hop
+- id: q-c5f96a423a1249f0bb6e6290cc7c8116
+  question: What new flags were added to the `uv check` command in uv version 0.11.32?
+  reference_answer: 'In uv 0.11.32, released on July 23, 2026, the `uv check` command gained two new flags:
+    `--package` and `--all-packages`.'
+  gold_finding_ids:
+  - c5f96a423a1249f0bb6e6290cc7c8116
+  type: single-hop
+- id: q-07a3f67c214740cd878e53661122e88a
+  question: What are the possible values for the worktree.baseRef configuration setting?
+  reference_answer: 'The worktree.baseRef setting accepts two options: ''fresh'' and ''head''.'
+  gold_finding_ids:
+  - 07a3f67c214740cd878e53661122e88a
+  type: single-hop
+- id: q-84fe7bd96d8e4f8e8c4b965e30942888
+  question: When using the ultracode trigger keyword, what is the default threshold that defines a medium-sized
+    workflow in terms of agent count?
+  reference_answer: A medium-sized workflow is defined as having fewer than 15 agents when using the ultracode
+    dynamic workflow configuration.
+  gold_finding_ids:
+  - 84fe7bd96d8e4f8e8c4b965e30942888
+  type: single-hop
+- id: q-fa615605e32f4a14bc0d5e0e63e44e26
+  question: What environment variable do I set to enable screen reader mode for Claude?
+  reference_answer: Set CLAUDE_AX_SCREEN_READER=1 to enable screen reader mode via environment variable.
+  gold_finding_ids:
+  - fa615605e32f4a14bc0d5e0e63e44e26
+  type: single-hop
+- id: q-673972c88de749d1a735388f92d4c786
+  question: What configuration setting controls whether a strict network allowlist is enforced in the
+    sandbox?
+  reference_answer: The sandbox.network.strictAllowlist setting controls whether a strict network allowlist
+    is enforced in the sandbox.
+  gold_finding_ids:
+  - 673972c88de749d1a735388f92d4c786
+  type: single-hop
+- id: q-d134bf5f40d541bb9d5641bddc819153
+  question: What environment variable controls whether assistant responses are logged in OpenTelemetry
+    for Claude Code, and what is the log event name used?
+  reference_answer: The environment variable is OTEL_LOG_ASSISTANT_RESPONSES, and the log event name for
+    assistant responses is claude_code.assistant_response.
+  gold_finding_ids:
+  - d134bf5f40d541bb9d5641bddc819153
+  type: multi-hop
+- id: q-ae2ee0604df3428b88ffcee6e0e56c00
+  question: What speed and cost multipliers does Claude Opus 4.8's fast mode use, and in which version
+    was it introduced?
+  reference_answer: Claude Opus 4.8's fast mode provides a 2.5x speed increase at 2.0x the cost, and it
+    was introduced in version 2.1.154.
+  gold_finding_ids:
+  - ae2ee0604df3428b88ffcee6e0e56c00
+  type: single-hop
+- id: q-95f6bc4100994019b1f8e37d3f526f8f
+  question: In which version was the Claude Fable 5 model introduced, and what class does it belong to?
+  reference_answer: The Claude Fable 5 model was introduced in version 2.1.170 and belongs to the Mythos-class
+    of models.
+  gold_finding_ids:
+  - 95f6bc4100994019b1f8e37d3f526f8f
+  type: single-hop
+- id: q-143caa7d27914c8dbbef79933b2e24ee
+  question: What are the input and output costs per million tokens for Claude Sonnet 5 during its promotional
+    period, and when does that pricing end?
+  reference_answer: During the promotional period, Claude Sonnet 5 is priced at $2 per million input tokens
+    and $10 per million output tokens, with the promotion running through August 31.
+  gold_finding_ids:
+  - 143caa7d27914c8dbbef79933b2e24ee
+  type: single-hop
+- id: q-d88c5774516a4a66bbfe1dfb51e32ba6
+  question: What is the context window size for Claude Opus 5, and how much does it cost per million tokens
+    in fast mode?
+  reference_answer: Claude Opus 5 has a 1 million token context window and is priced at $10 per million
+    input tokens and $50 per million output tokens in fast mode.
+  gold_finding_ids:
+  - d88c5774516a4a66bbfe1dfb51e32ba6
+  type: single-hop
+- id: u-001
+  question: Which version of uv added built-in support for managing Conda environments, and when was it
+    released?
+  reference_answer: ''
+  gold_finding_ids: []
+  type: unanswerable
+- id: u-002
+  question: What was the headline feature of Ruff version 0.17.0?
+  reference_answer: ''
+  gold_finding_ids: []
+  type: unanswerable
+- id: u-003
+  question: What is the promotional price per million input tokens for Claude Haiku 5?
+  reference_answer: ''
+  gold_finding_ids: []
+  type: unanswerable
+- id: u-004
+  question: Which version of Pydantic introduced the pure-Python build variant that removes the Rust dependency?
+  reference_answer: ''
+  gold_finding_ids: []
+  type: unanswerable
+- id: u-005
+  question: Which new GPU platforms were added to vLLM's performance benchmark suite in its August 2026
+    release?
+  reference_answer: ''
+  gold_finding_ids: []
+  type: unanswerable

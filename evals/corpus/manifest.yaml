@@ -1,3 +1,20 @@
 name: public-v1
-domain_note: 2026 AI-tooling release notes and announcements — post-cutoff by construction.
-sources: []   # populated at corpus-build time; build.py rejects an empty list
+domain_note: 2026 AI-tooling release notes and changelogs (raw markdown, newest entries
+  first) — fast-moving, verifiable, post-knowledge-cutoff by construction.
+sources:
+  - url: https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md
+    note: Claude Code CLI changelog; 2026 releases at head
+  - url: https://raw.githubusercontent.com/astral-sh/uv/main/CHANGELOG.md
+    note: uv package manager changelog; current release train
+  - url: https://raw.githubusercontent.com/astral-sh/ruff/main/CHANGELOG.md
+    note: ruff linter changelog; current release train
+  - url: https://raw.githubusercontent.com/vllm-project/vllm/main/RELEASE.md
+    note: vLLM release process/notes
+  - url: https://raw.githubusercontent.com/pydantic/pydantic/main/HISTORY.md
+    note: pydantic release history; newest at head
+  - url: https://raw.githubusercontent.com/langchain-ai/langchain/master/README.md
+    note: langchain top-level readme; current ecosystem shape
+  - url: https://raw.githubusercontent.com/openai/openai-python/main/CHANGELOG.md
+    note: openai-python SDK changelog; newest at head
+  - url: https://raw.githubusercontent.com/anthropics/anthropic-sdk-python/main/CHANGELOG.md
+    note: anthropic-sdk-python changelog; newest at head
