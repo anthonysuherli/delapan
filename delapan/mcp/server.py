@@ -206,6 +206,24 @@ async def _explore_impl(ctx: TenantContext, prompt: str | None, max_findings: in
         )
         captured = findings[:cap]
 
+        if not captured:
+            store.update_exploration(
+                exp_id, status="empty", completed_at=_now_iso(), finding_ids=[]
+            )
+            if topic_id:  # the gap was not filled — return the topic to the backlog
+                await store.update_curation_topic(ctx.kb_id, topic_id, consumed_at=None)
+            return {
+                "exploration_id": exp_id,
+                "status": "empty",
+                "count": 0,
+                "reason": (
+                    "the pipeline produced no findings — search returned nothing "
+                    "(check your Tavily quota) or every extracted finding fell below "
+                    "the confidence floor; retry with a more specific prompt"
+                ),
+                "unarchived": was_archived,
+            }
+
         outcome = await resolve_and_persist(ctx, store, captured, get_config())
         ids = outcome.affected_finding_ids
 
@@ -234,11 +252,14 @@ async def _explore_impl(ctx: TenantContext, prompt: str | None, max_findings: in
 
     out = {
         "exploration_id": exp_id,
+        "status": "completed",
         "finding_ids": ids,
         "count": len(ids),
         "synopsis": syn_status,
         "unarchived": was_archived,
     }
+    if not ids:
+        out["note"] = "all findings resolved as duplicates of existing knowledge (no new rows)"
     if topic_id:
         out["backlog_topic"] = topic_id
     return out
@@ -251,9 +272,13 @@ async def delapan_explore(
     """Run the research pipeline (plan→search→crawl→extract→merge) and persist
     findings to the named KB (creating the project/KB on demand). Blocks until
     complete (may take several minutes; the calling client may time out). Returns
-    ``{"exploration_id", "finding_ids", "count", "synopsis", "unarchived"}`` —
-    ``synopsis`` is the rebuild status (``"rebuilt"``/``"skipped"``/``"failed: <msg>"``),
-    ``unarchived`` reports whether writing here flipped an archived KB back to live.
+    ``{"exploration_id", "status", "finding_ids", "count", "synopsis", "unarchived"}`` —
+    ``status`` is ``"completed"`` or ``"empty"`` (the pipeline produced zero findings;
+    an empty run also adds ``"reason"`` and returns any consumed backlog topic instead
+    of a ``"finding_ids"``/``"synopsis"`` pair), ``synopsis`` is the rebuild status
+    (``"rebuilt"``/``"skipped"``/``"failed: <msg>"``), ``unarchived`` reports whether
+    writing here flipped an archived KB back to live. A ``"completed"`` run where every
+    finding resolved as a duplicate adds ``"note"``.
 
     With no ``prompt``, consumes the top item of the KB's curation backlog — the
     gap the KB was asked about most — and adds ``"backlog_topic"`` to the result.

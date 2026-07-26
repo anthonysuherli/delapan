@@ -149,7 +149,7 @@ async def test_promptless_explore_consumes_top_topic(patched, monkeypatch):
 
     async def _fake_run(prompt, **_k):
         seen["prompt"] = prompt
-        return []
+        return ["finding1"]  # non-empty: zero-finding runs are covered in test_explore_empty.py
 
     monkeypatch.setattr(srv, "run_exploration", _fake_run)
     monkeypatch.setattr(srv, "resolve_and_persist", _fake_persist)
