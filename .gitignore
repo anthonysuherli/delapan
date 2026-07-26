@@ -31,3 +31,6 @@ venv/
 
 # Isolated worktrees for subagent-driven-development
 .worktrees/
+
+# Eval run artifacts
+evals/runs/

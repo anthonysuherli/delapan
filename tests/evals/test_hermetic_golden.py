@@ -28,3 +28,6 @@ async def test_golden_metrics(path, store):
         assert row["verdict"] == row["expected_verdict"], row["query"]
     cal = out["calibration"]
     assert set(cal) == {"rich_n", "rich_gold_injected_rate", "gap_n", "gap_false_rate"}
+    if path.stem == "delapan_engine":
+        # pinned: the documented false-rich case, tracked not anecdotal
+        assert cal["rich_gold_injected_rate"] == 0.0

@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import time
 from collections.abc import Awaitable, Callable
@@ -26,6 +27,8 @@ from evals.scoring.efficiency import TOKENIZER, count_tokens
 from evals.scoring.faithfulness import Predictor, load_hhem, score_faithfulness
 
 T = TypeVar("T")
+
+VALID_ARMS = frozenset({"closed_book", "production", "oracle", "full_context"})
 
 
 async def _retry_once(coro_fn: Callable[[], Awaitable[T]]) -> T:
@@ -87,6 +90,9 @@ async def run_eval(
     depth: str = "normal",
     use_hhem: bool = False,
 ) -> Path:
+    unknown = set(arms) - VALID_ARMS
+    if unknown:
+        raise ValueError(f"unknown arms: {sorted(unknown)} (valid: {sorted(VALID_ARMS)})")
     set_name, questions = load_question_set(set_path)
     ctx = resolve_tenant(project, kb, create=False)
     from delapan.store import get_store
@@ -108,6 +114,7 @@ async def run_eval(
         "git_sha": _git_sha(),
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "question_set": str(set_path), "set_name": set_name, "arms": list(arms),
+        "question_set_sha256": hashlib.sha256(Path(set_path).read_bytes()).hexdigest(),
         "answer_model": answer_model, "judge_model": judge_model,
         "tokenizer": TOKENIZER, "depth": depth,
         "prompts": {
@@ -130,8 +137,6 @@ async def run_eval(
 
 
 def _lockfile_sha() -> str:
-    import hashlib
-
     lock = Path(__file__).parent / "corpus" / "lockfile.json"
     if not lock.exists():
         return ""

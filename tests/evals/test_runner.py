@@ -69,6 +69,8 @@ async def test_run_eval_writes_complete_artifact(seeded, tmp_path):
 
     assert manifest["arms"] == ["closed_book", "production", "oracle"]
     assert manifest["tokenizer"] == "o200k_base"
+    sha = manifest["question_set_sha256"]
+    assert len(sha) == 64 and all(c in "0123456789abcdef" for c in sha)
     assert manifest["prompts"]["judge_system"]           # frozen prompts recorded
     assert len(records) == 6                              # 2 questions × 3 arms
     prod = next(r for r in records if r["arm"] == "production" and r["question_id"] == "q1")
@@ -96,3 +98,18 @@ async def test_answer_failure_marks_unscored_not_scored(seeded, tmp_path, monkey
     records = json.loads((run_dir / "records.json").read_text())
     assert all(r["unscored"] and r["error"] for r in records)
     assert calls["n"] == 4                                # 2 questions × (1 try + 1 retry)
+
+
+async def test_run_eval_rejects_unknown_arm(seeded, tmp_path):
+    project, kb = seeded
+    set_path = tmp_path / "set.yaml"
+    set_path.write_text(SET_YAML)
+    out_dir = tmp_path / "runs"
+
+    with pytest.raises(ValueError, match="prodction"):
+        await run_eval(
+            set_path=set_path, project=project, kb=kb,
+            arms=["closed_book", "prodction"],
+            answer_model="m", judge_model="j", out_dir=out_dir,
+        )
+    assert not out_dir.exists() or not list(out_dir.iterdir())

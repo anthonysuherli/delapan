@@ -17,6 +17,8 @@ from delapan.core.config import get_config
 from evals.artifact import load_run
 from evals.report import render_report
 from evals.runner import run_eval
+from evals.scoring.correctness import is_correct
+from evals.scoring.efficiency import efficiency_per_1k
 
 DEFAULT_ARMS = ["closed_book", "production", "oracle"]
 
@@ -77,24 +79,51 @@ def main(argv: list[str] | None = None) -> int:
 
     # sweep: production arm only — the other arms don't read tiers config.
     prev = os.environ.get("DLP_TIERS__PREAMBLE_CHAR_BUDGET")
-    for budget in args.budgets.split(","):
-        for depth in args.depths.split(","):
-            os.environ["DLP_TIERS__PREAMBLE_CHAR_BUDGET"] = budget
-            get_config.cache_clear()  # lru_cache — without this every point measures point 1
-            run_dir = asyncio.run(
-                run_eval(
-                    set_path=args.set, project=args.project, kb=args.kb,
-                    arms=["closed_book", "production"], answer_model=answer_model,
-                    judge_model=judge_model,
-                    out_dir=args.out / f"sweep-b{budget}-{depth}", depth=depth,
+    points: list[tuple[str, str, Path]] = []
+    try:
+        for budget in args.budgets.split(","):
+            for depth in args.depths.split(","):
+                os.environ["DLP_TIERS__PREAMBLE_CHAR_BUDGET"] = budget
+                get_config.cache_clear()  # lru_cache — without this every point measures point 1
+                run_dir = asyncio.run(
+                    run_eval(
+                        set_path=args.set, project=args.project, kb=args.kb,
+                        arms=["closed_book", "production"], answer_model=answer_model,
+                        judge_model=judge_model,
+                        out_dir=args.out / f"sweep-b{budget}-{depth}", depth=depth,
+                    )
                 )
-            )
-            print(f"budget={budget} depth={depth} -> {run_dir}")
-    if prev is not None:
-        os.environ["DLP_TIERS__PREAMBLE_CHAR_BUDGET"] = prev
-    else:
-        os.environ.pop("DLP_TIERS__PREAMBLE_CHAR_BUDGET", None)
-    get_config.cache_clear()
+                print(f"budget={budget} depth={depth} -> {run_dir}")
+                points.append((budget, depth, run_dir))
+    finally:
+        if prev is not None:
+            os.environ["DLP_TIERS__PREAMBLE_CHAR_BUDGET"] = prev
+        else:
+            os.environ.pop("DLP_TIERS__PREAMBLE_CHAR_BUDGET", None)
+        get_config.cache_clear()
+
+    rows = ["| budget | depth | arm | n | accuracy | mean_tokens | eff_per_1k |",
+            "|---|---|---|---|---|---|---|"]
+    for budget, depth, run_dir in points:
+        _, records = load_run(run_dir)
+        by_arm: dict[str, list[dict]] = {}
+        for r in records:
+            if not r["unscored"] and r["question_type"] != "unanswerable":
+                by_arm.setdefault(r["arm"], []).append(r)
+        closed = by_arm.get("closed_book", [])
+        closed_acc = (
+            sum(is_correct(r["question_type"], r["verdict"]) for r in closed) / len(closed)
+            if closed else None
+        )
+        for arm in sorted(by_arm):
+            ans = by_arm[arm]
+            acc = sum(is_correct(r["question_type"], r["verdict"]) for r in ans) / len(ans)
+            mean_tok = sum(r["tokens_injected"] for r in ans) / len(ans)
+            eff = f"{efficiency_per_1k(acc, closed_acc, mean_tok):.3f}" if closed_acc is not None else "n/a"
+            rows.append(f"| {budget} | {depth} | {arm} | {len(ans)} | {acc:.3f} | {mean_tok:.0f} | {eff} |")
+    table = "\n".join(rows) + "\n"
+    print(table)
+    (args.out / "sweep-summary.md").write_text(table)
     return 0
 
 
