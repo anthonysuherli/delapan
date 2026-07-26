@@ -318,7 +318,24 @@ async def delapan_backlog(project: str, kb: str, limit: int | None = None) -> di
 # --- KG intent schema (co-design seam) ---------------------------------------
 
 
+def _missing_llm_key_error(tool: str) -> dict | None:
+    """Preflight for the KG tools — extraction and proposal route through the
+    gateway LLM, so a keyless call would otherwise surface as a traceback or a
+    silently generic/empty result. Mirrors the explore preflight's tier-aware
+    phrasing (no local .env advice on the cloud tier)."""
+    if get_settings().ai_gateway_api_key:
+        return None
+    if active_backend() == "local":
+        return {
+            "error": f"{tool} needs an LLM credential: set AI_GATEWAY_API_KEY in "
+            "the plugin root's .env (see .env.example)."
+        }
+    return {"error": f"{tool} is unavailable: the server is missing AI_GATEWAY_API_KEY."}
+
+
 async def _propose_kg_schema_impl(ctx: TenantContext, max_findings: int | None) -> dict:
+    if err := _missing_llm_key_error("propose_kg_schema"):
+        return err
     store = get_store(ctx.access_token, org_id=ctx.org_id)
     cfg = get_config().knowledge_graph
     # The Store's list view omits `content`, so reuse the builder's hydrating
@@ -352,7 +369,10 @@ async def delapan_propose_kg_schema(project: str, kb: str, max_findings: int | N
         ctx = resolve_tenant(project, kb, create=False)
     except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
         return {"error": f"KB not found ({project}/{kb}): {exc}"}
-    return await _propose_kg_schema_impl(ctx, max_findings)
+    try:
+        return await _propose_kg_schema_impl(ctx, max_findings)
+    except MissingEmbeddingKeyError as exc:
+        return {"error": str(exc)}
 
 
 def _set_kg_schema_impl(ctx: TenantContext, schema: dict) -> dict:
@@ -400,6 +420,14 @@ async def delapan_get_kg_schema(project: str, kb: str) -> dict:
     return _get_kg_schema_impl(ctx)
 
 
+async def _build_graph_impl(
+    ctx: TenantContext, max_findings: int | None, rebuild: bool, use_schema: bool
+) -> dict:
+    if err := _missing_llm_key_error("build_graph"):
+        return err
+    return await build_graph(ctx, max_findings=max_findings, rebuild=rebuild, use_schema=use_schema)
+
+
 @mcp.tool()
 async def delapan_build_graph(
     project: str,
@@ -418,7 +446,10 @@ async def delapan_build_graph(
         ctx = resolve_tenant(project, kb, create=False)
     except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
         return {"error": f"KB not found ({project}/{kb}): {exc}"}
-    return await build_graph(ctx, max_findings=max_findings, rebuild=rebuild, use_schema=use_schema)
+    try:
+        return await _build_graph_impl(ctx, max_findings, rebuild, use_schema)
+    except MissingEmbeddingKeyError as exc:
+        return {"error": str(exc)}
 
 
 # --- Tenancy ---------------------------------------------------------------
