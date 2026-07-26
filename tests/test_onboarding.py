@@ -46,3 +46,15 @@ async def test_resume_tool_returns_card(local_store, monkeypatch):
 
     res = await s.delapan_resume("ghost-project", "ghost-kb")
     assert "onboarding" in res and res["coverage"] == "gap"
+
+
+@pytest.mark.asyncio
+async def test_resume_card_survives_store_resolution_failure(local_store, monkeypatch):
+    import delapan.mcp.server as s
+
+    def _boom():
+        raise RuntimeError("store down")
+
+    monkeypatch.setattr(s, "resolve_store", _boom)
+    res = await s.delapan_resume("ghost-project", "ghost-kb")
+    assert "onboarding" in res and "try_demo" not in res

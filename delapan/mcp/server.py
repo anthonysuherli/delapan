@@ -83,7 +83,11 @@ async def delapan_resume(
     try:
         ctx = resolve_tenant(project, kb, create=False)
     except Exception as exc:  # noqa: BLE001 — onboarding card for a missing project/KB
-        return kb_not_found_card(project, kb, exc, store=resolve_store())
+        try:
+            store = resolve_store()
+        except Exception:  # noqa: BLE001 — the card must render even when the store won't
+            store = None
+        return kb_not_found_card(project, kb, exc, store=store)
     return await _resume_impl(ctx, query, depth)
 
 
