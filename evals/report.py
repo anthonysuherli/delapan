@@ -37,23 +37,28 @@ def render_report(manifest: dict, records: list[dict]) -> str:
               "| arm | n | accuracy | 95% CI | mean tokens | eff/1k tok | faithfulness |",
               "|---|---|---|---|---|---|---|"]
 
-    closed_acc = 0.0
-    accs: dict[str, float] = {}
+    closed_ans = [r for r in by_arm.get("closed_book", []) if r["question_type"] != "unanswerable"]
+    closed_acc: float | None = (
+        sum(1.0 for r in closed_ans if is_correct(r["question_type"], r["verdict"])) / len(closed_ans)
+        if closed_ans else None
+    )
+
     for arm in sorted(by_arm):
         ans = [r for r in by_arm[arm] if r["question_type"] != "unanswerable"]
         if not ans:
             continue
         outcomes = [1.0 if is_correct(r["question_type"], r["verdict"]) else 0.0 for r in ans]
         acc = sum(outcomes) / len(outcomes)
-        accs[arm] = acc
-        if arm == "closed_book":
-            closed_acc = acc
         lo, hi = bootstrap_ci(outcomes)
         mean_tok = sum(r["tokens_injected"] for r in ans) / len(ans)
         faith = [r["faithfulness"] for r in ans if r["faithfulness"] is not None]
+        eff = (
+            _fmt(efficiency_per_1k(acc, closed_acc, mean_tok))
+            if closed_acc is not None else "n/a"
+        )
         lines.append(
             f"| {arm} | {len(ans)} | {_fmt(acc)} | [{_fmt(lo)}, {_fmt(hi)}] "
-            f"| {mean_tok:.0f} | {_fmt(efficiency_per_1k(acc, closed_acc, mean_tok))} "
+            f"| {mean_tok:.0f} | {eff} "
             f"| {_fmt(sum(faith) / len(faith)) if faith else 'n/a'} |"
         )
 

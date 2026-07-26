@@ -52,3 +52,24 @@ def test_report_deterministic_and_complete(tmp_path):
 def test_unscored_flag():
     records = RECORDS + [_rec("q4", "production", None, unscored=True)]
     assert "NON-COMPARABLE" in render_report(MANIFEST, records)  # 1/7 > 10%
+
+
+def test_no_closed_book_arm_renders_na_efficiency():
+    """Efficiency should be n/a when closed_book arm is missing, not phantom 0.0."""
+    manifest = MANIFEST.copy()
+    manifest["arms"] = ["oracle", "production"]
+    records = [
+        _rec("q1", "oracle", "correct", tokens=100),
+        _rec("q1", "production", "correct", tokens=900, faith=0.9),
+        _rec("q2", "oracle", "correct", tokens=150),
+        _rec("q2", "production", "incorrect", tokens=1100, faith=0.5),
+    ]
+    report = render_report(manifest, records)
+    # Find the production row in accuracy table and verify it has n/a, not a number
+    lines = report.split("\n")
+    production_rows = [ln for ln in lines if "| production |" in ln]
+    assert production_rows, "production row not found in report"
+    prod_row = production_rows[0]
+    cells = [c.strip() for c in prod_row.split("|")]
+    # cells: ["", "production", "2", "0.500", "[..., ...]", "1000", "n/a", "0.700", ""]
+    assert "n/a" in cells, f"Expected n/a in production row, got: {prod_row}"
