@@ -85,7 +85,7 @@ data/demo.db           # pre-built demo KB (see §2)
 - **Onboarding card.** `delapan_resume` for a repo/branch with no KB returns
   the `gap` verdict plus onboarding guidance: run `/delapan:explore` to seed
   (states the key requirement), and — only when the demo project exists in the
-  store — meanwhile try `/delapan:search` on the demo KB. Implemented in the
+  store — meanwhile try `/delapan:resume` on the demo KB. Implemented in the
   MCP tool layer so the cloud connector (and a future codex8 port) inherit it;
   the demo mention self-suppresses on cloud, where no demo KB is seeded.
 - **One-key story.** Required: the AI Gateway key (LLM + embeddings).

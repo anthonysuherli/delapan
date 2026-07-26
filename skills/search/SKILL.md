@@ -29,5 +29,3 @@ Use the user's question verbatim unless it needs disambiguation for retrieval.
 
 - Result contains `error` mentioning a credential: tell the user to copy
   `.env.example` to `.env` in the plugin root and set the named variable.
-- Explore result has `status: "empty"`: no findings were produced — relay the
-  `reason` field verbatim (never report an empty run as success).
