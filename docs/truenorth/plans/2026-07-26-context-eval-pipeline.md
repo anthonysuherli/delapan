@@ -67,7 +67,7 @@ tests/evals/
 **Interfaces:**
 - Produces: `Question` (frozen dataclass: `id: str`, `question: str`, `reference_answer: str`, `gold_finding_ids: list[str]`, `type: str`), `QUESTION_TYPES = frozenset({"single-hop","multi-hop","temporal","unanswerable"})`, `load_question_set(path: Path) -> tuple[str, list[Question]]` returning `(set_name, questions)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_models.py
@@ -128,12 +128,12 @@ def test_answerable_requires_gold_ids(tmp_path):
         load_question_set(_write(tmp_path, bad))
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/evals/test_models.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'evals'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `evals/__init__.py`, `evals/scoring/__init__.py`, `tests/evals/__init__.py`: empty files.
 
@@ -197,12 +197,12 @@ evals = ["pyyaml>=6.0", "tiktoken>=0.8"]
 evals-hhem = ["transformers>=4.44", "torch>=2.3"]
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv pip install -e ".[dev,local,evals]" && pytest tests/evals/test_models.py -v && ruff check evals tests/evals`
 Expected: 4 PASS, ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals tests/evals pyproject.toml
@@ -220,7 +220,7 @@ git commit -m "feat(evals): package scaffolding + question-set loader"
 **Interfaces:**
 - Produces: `precision_at_k(retrieved: list[str], gold: set[str], k: int) -> float`, `recall_at_k(...) -> float`, `mrr(retrieved, gold) -> float`, `ndcg_at_k(retrieved, gold, k) -> float` (binary relevance), `verdict_calibration(records: list[dict]) -> dict` where each record has `{"verdict": str, "gold_ids": list[str], "injected_ids": list[str]}` and the result is `{"rich_n", "rich_gold_injected_rate", "gap_n", "gap_false_rate"}`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_retrieval.py
@@ -273,12 +273,12 @@ def test_verdict_calibration():
     assert cal["gap_n"] == 2 and cal["gap_false_rate"] == 0.5
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/evals/test_retrieval.py -v`
 Expected: FAIL with `ModuleNotFoundError` (no `evals.scoring.retrieval`)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # evals/scoring/retrieval.py
@@ -334,12 +334,12 @@ def verdict_calibration(records: list[dict]) -> dict:
     }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/evals/test_retrieval.py -v && ruff check evals`
 Expected: 4 PASS, ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/scoring/retrieval.py tests/evals/test_retrieval.py
@@ -357,7 +357,7 @@ git commit -m "feat(evals): retrieval metrics + verdict calibration"
 **Interfaces:**
 - Produces: `mcnemar_exact(b: int, c: int) -> float` (two-sided exact binomial p; `b` = arm-A-only correct, `c` = arm-B-only correct), `bootstrap_ci(values: list[float], n_resamples: int = 10_000, alpha: float = 0.05, seed: int = 0) -> tuple[float, float]` (percentile CI on the mean), `paired_table(a: list[bool], b: list[bool]) -> tuple[int, int]` returning `(b_count, c_count)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_stats.py
@@ -403,12 +403,12 @@ def test_bootstrap_ci_brackets_mean_and_is_deterministic():
     assert 0.4 < ci1[0] and ci1[1] < 0.8  # sane width for n=100
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/evals/test_stats.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'evals.stats'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # evals/stats.py
@@ -462,12 +462,12 @@ def bootstrap_ci(
     return means[lo_i], means[hi_i]
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/evals/test_stats.py -v && ruff check evals`
 Expected: 5 PASS, ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/stats.py tests/evals/test_stats.py
@@ -485,7 +485,7 @@ git commit -m "feat(evals): exact McNemar + seeded bootstrap CIs"
 **Interfaces:**
 - Produces: `TOKENIZER = "o200k_base"`, `count_tokens(text: str) -> int`, `efficiency_per_1k(prod_acc: float, closed_acc: float, mean_tokens: float) -> float` (accuracy delta per 1k injected tokens; `0.0` when no tokens injected).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_efficiency.py
@@ -514,12 +514,12 @@ def test_efficiency_per_1k():
     assert efficiency_per_1k(0.8, 0.6, 0.0) == 0.0  # closed-book arm: no tokens
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/evals/test_efficiency.py -v`
 Expected: FAIL with `ModuleNotFoundError` (no `evals.scoring.efficiency`)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # evals/scoring/efficiency.py
@@ -556,12 +556,12 @@ def efficiency_per_1k(prod_acc: float, closed_acc: float, mean_tokens: float) ->
     return (prod_acc - closed_acc) / (mean_tokens / 1000.0)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/evals/test_efficiency.py -v && ruff check evals`
 Expected: 3 PASS, ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/scoring/efficiency.py tests/evals/test_efficiency.py
@@ -580,7 +580,7 @@ git commit -m "feat(evals): pinned-tokenizer context-efficiency metrics"
 - Consumes: `Question` (Task 1); engine seams `delapan.core.agent.preamble.render_preamble/select_preamble`, `delapan.core.config.TiersConfig/get_config`, `Store` (`get_finding(kb_id, id)`, `list_findings(kb_id, limit=...) -> {"findings": [...]}` — titles only, so content comes from `get_finding`).
 - Produces: `ArmContext` dataclass (`xml: str | None`, `coverage: str | None`, `band_counts: dict[int, int] | None`, `injected_ids: list[str]`), and `async build_context(arm: str, *, store, kb_id: str, question: Question, depth: str = "normal", full_context_cap: int = 60_000) -> ArmContext` for `arm ∈ {"closed_book", "production", "oracle", "full_context"}`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_arms.py
@@ -654,12 +654,12 @@ async def test_unknown_arm_rejected(store):
         await build_context("vibes", store=store, kb_id=kb, question=Q)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/evals/test_arms.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'evals.arms'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # evals/arms.py
@@ -742,12 +742,12 @@ async def build_context(
     raise ValueError(f"unknown arm: {arm}")
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/evals/test_arms.py -v && ruff check evals`
 Expected: 5 PASS, ruff clean. If `TiersConfig` is not a pydantic model (no `.model_dump()`), use `dataclasses.replace`-style construction per its actual definition in `delapan/core/config.py` — check that file and keep the override semantics identical.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/arms.py tests/evals/test_arms.py
@@ -766,7 +766,7 @@ git commit -m "feat(evals): closed-book/production/oracle/full-context arm build
 - Consumes: `delapan.core.clients.ai_gateway.text_completion(*, model, system, user, temperature=0.0, max_tokens=None) -> str`.
 - Produces: `ABSTAIN_MARKER = "I cannot answer this from the available information."`, `async answer_question(question: str, context_xml: str | None, *, model: str, max_tokens: int = 800) -> str`, plus module constants `GROUNDED_SYSTEM` and `CLOSED_BOOK_SYSTEM` (frozen prompt text — they go in the run manifest).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_answerer.py
@@ -804,12 +804,12 @@ async def test_closed_book_prompt_has_no_context_block(monkeypatch):
     assert ABSTAIN_MARKER in calls["system"]
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/evals/test_answerer.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'evals.answerer'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # evals/answerer.py
@@ -851,12 +851,12 @@ async def answer_question(
     )
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/evals/test_answerer.py -v && ruff check evals`
 Expected: 2 PASS, ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/answerer.py tests/evals/test_answerer.py
@@ -875,7 +875,7 @@ git commit -m "feat(evals): grounded/closed-book answerer with abstention rule"
 - Consumes: `delapan.core.clients.ai_gateway.structured_completion(*, model, response_format, system, user, ...) -> T`; `Question` (Task 1).
 - Produces: `class CorrectnessVerdict(BaseModel)` with `verdict: Literal["correct", "incorrect", "abstained"]` and `reasoning: str`; `async judge(question: Question, answer: str, *, judge_model: str) -> CorrectnessVerdict`; `is_correct(question_type: str, verdict: str) -> bool` (pure: unanswerable → correct iff `abstained`; else correct iff `correct`); `JUDGE_SYSTEM` constant (frozen rubric text — goes in the manifest).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_correctness.py
@@ -910,12 +910,12 @@ def test_is_correct_rules():
     assert not is_correct("unanswerable", "correct")   # confident answer to unanswerable
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/evals/test_correctness.py -v`
 Expected: FAIL with `ModuleNotFoundError` (no `evals.scoring.correctness`)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # evals/scoring/correctness.py
@@ -974,12 +974,12 @@ def is_correct(question_type: str, verdict: str) -> bool:
     return verdict == "correct"
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/evals/test_correctness.py -v && ruff check evals`
 Expected: 2 PASS, ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/scoring/correctness.py tests/evals/test_correctness.py
@@ -997,7 +997,7 @@ git commit -m "feat(evals): reference-based correctness judge + abstention scori
 **Interfaces:**
 - Produces: `score_faithfulness(context_xml: str | None, answer: str, predictor: Callable[[str, str], float] | None = None) -> float | None` — returns `None` (exempt) when there is no injected findings content (the empty-context ⇒ perfect-faithfulness trap); `load_hhem() -> Callable[[str, str], float]` (lazy transformers import, actionable ImportError message naming the `evals-hhem` extra).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_faithfulness.py
@@ -1050,12 +1050,12 @@ def test_missing_hhem_dep_is_actionable(monkeypatch):
         load_hhem()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/evals/test_faithfulness.py -v`
 Expected: FAIL with `ModuleNotFoundError` (no `evals.scoring.faithfulness`)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # evals/scoring/faithfulness.py
@@ -1105,12 +1105,12 @@ def load_hhem() -> Predictor:
     return predict
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/evals/test_faithfulness.py -v && ruff check evals`
 Expected: 5 PASS, ruff clean (no transformers install needed — guard tests inject a fake predictor)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/scoring/faithfulness.py tests/evals/test_faithfulness.py
@@ -1134,7 +1134,7 @@ git commit -m "feat(evals): HHEM faithfulness scorer with empty-context exemptio
   - Manifest keys (written by Task 10): `git_sha, created_at, question_set, set_name, arms, answer_model, judge_model, tokenizer, prompts {grounded_system, closed_book_system, judge_system}, config {tiers, search_max_limit, memory_enabled}, corpus_lockfile_sha256, depth`.
   - `report.render_report(manifest: dict, records: list[dict]) -> str` — markdown, fully deterministic (fixed float format `{:.3f}`, sorted arms), containing: per-arm accuracy over answerable questions with bootstrap CI, a separate unanswerable row (abstention rate per arm), McNemar p for production-vs-closed_book, mean tokens injected + efficiency per 1k, mean faithfulness over scored records only, unscored count with a `NON-COMPARABLE` flag when unscored > 10% of records.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_artifact_report.py
@@ -1194,12 +1194,12 @@ def test_unscored_flag():
     assert "NON-COMPARABLE" in render_report(MANIFEST, records)  # 1/7 > 10%
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/evals/test_artifact_report.py -v`
 Expected: FAIL with `ModuleNotFoundError` (no `evals.artifact`)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # evals/artifact.py
@@ -1318,12 +1318,12 @@ def render_report(manifest: dict, records: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/evals/test_artifact_report.py -v && ruff check evals`
 Expected: 3 PASS, ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/artifact.py evals/report.py tests/evals/test_artifact_report.py
@@ -1345,7 +1345,7 @@ git commit -m "feat(evals): reproducible artifacts + deterministic markdown repo
   - CLI: `python -m evals run --set S --project P --kb K [--arms a,b,c] [--answer-model M] [--judge-model J] [--depth D] [--out DIR] [--hhem]`; `python -m evals report RUN_DIR`; `python -m evals sweep --budgets 3000,7000,12000 --depths shallow,deep ...` (one `run_eval` per grid point, setting `DLP_TIERS__PREAMBLE_CHAR_BUDGET` env + `get_config.cache_clear()` before each, restoring after).
   - Model defaults when flags omitted: `get_config().canvas.answer_model` for both answerer and judge.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_runner.py
@@ -1449,12 +1449,12 @@ async def test_answer_failure_marks_unscored_not_scored(seeded, tmp_path, monkey
     assert calls["n"] == 4                                # 2 questions × (1 try + 1 retry)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/evals/test_runner.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'evals.runner'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # evals/runner.py
@@ -1697,12 +1697,12 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/evals/test_runner.py -v && ruff check evals`
 Expected: 2 PASS, ruff clean. Note: `resolve_tenant` on the local tier ignores auth entirely; the test's `store` fixture env vars make `get_store()` in the runner return the same temp SQLite DB.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/runner.py evals/__main__.py tests/evals/test_runner.py
@@ -1721,7 +1721,7 @@ git commit -m "feat(evals): runner + run/report/sweep CLI"
 - Consumes: `tests/golden/*.yaml` + `.vectors.json` sidecars (existing format: `findings` with `id/title/content`, `queries` with `query/expect_verdict/expect_top_ids`), `band_findings`/`assess_coverage` from `delapan.core.agent.preamble`, retrieval metrics (Task 2).
 - Produces: `async golden_retrieval_metrics(spec: dict, vectors: dict, store) -> dict` returning `{"per_query": [{"query", "verdict", "expected_verdict", "p_at_3", "mrr", "ndcg_at_5"}], "calibration": <verdict_calibration dict>}` — `expect_top_ids` serve as the gold set.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_hermetic_golden.py
@@ -1757,12 +1757,12 @@ async def test_golden_metrics(path, store):
     assert set(cal) == {"rich_n", "rich_gold_injected_rate", "gap_n", "gap_false_rate"}
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/evals/test_hermetic_golden.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'evals.hermetic'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # evals/hermetic.py
@@ -1815,12 +1815,12 @@ async def golden_retrieval_metrics(spec: dict, vectors: dict, store) -> dict:
     return {"per_query": per_query, "calibration": verdict_calibration(cal_records)}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/evals/test_hermetic_golden.py tests/test_golden_sets.py -v && ruff check evals`
 Expected: all PASS (both golden sets × both suites), ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/hermetic.py tests/evals/test_hermetic_golden.py
@@ -1840,7 +1840,7 @@ git commit -m "feat(evals): hermetic golden-set retrieval-metric tier"
 - Produces: `async build_corpus(manifest_path: Path, *, project: str = "delapan-evals", kb: str = "public-v1", fetcher=None) -> dict` (the lockfile dict, also written to `evals/corpus/lockfile.json`): `{"built_at", "manifest_sha256", "sources": [{"url", "content_sha256", "finding_count"}], "finding_ids": [...]}`. `fetcher: Callable[[str], Awaitable[str]] | None` — injectable for tests; default fetches with `httpx.AsyncClient` (already a transitive dep via the openai client).
 - Manifest schema: `name`, `domain_note` (one line saying why sources are post-cutoff), `sources: [{url, note}]`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_corpus_build.py
@@ -1898,12 +1898,12 @@ async def test_build_corpus_persists_and_locks(tmp_path, store, monkeypatch):
     assert store.count_findings(kb_row) == 1
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/evals/test_corpus_build.py -v`
 Expected: FAIL with `ModuleNotFoundError` (no `evals.corpus.build`)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `evals/corpus/manifest.yaml` (starter content — final URL list is chosen at the Task 14 manual step, criterion: public, post-knowledge-cutoff, one domain):
 
@@ -2012,12 +2012,12 @@ async def build_corpus(
 
 Also create empty `evals/corpus/__init__.py`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/evals/test_corpus_build.py -v && ruff check evals`
 Expected: 1 PASS, ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/corpus tests/evals/test_corpus_build.py
@@ -2036,7 +2036,7 @@ git commit -m "feat(evals): pinned-source corpus builder with lockfile"
 - Consumes: `structured_completion` (judge-style drafting), `Store.list_findings`/`get_finding`, `Question`/`QUESTION_TYPES` (Task 1).
 - Produces: `has_leakage(question: str, source_text: str, max_span: int = 8) -> bool` (pure — True when the question shares a contiguous ≥`max_span`-token span, case-insensitive, with the source); `class DraftQuestion(BaseModel)` (`question`, `reference_answer`, `type`); `async draft_questions(store, kb_id: str, *, model: str, per_finding: int = 1) -> list[dict]` — drafts against each live finding, drops leaking drafts, returns yaml-ready dicts with `gold_finding_ids=[finding_id]`; drafted output is written by the CLI-user to a yaml for **manual curation** before freezing as `evals/sets/v1.yaml`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/evals/test_leakage_filter.py
@@ -2071,12 +2071,12 @@ def test_short_overlap_ok():
     assert not has_leakage(q, SOURCE)                  # <8-token overlap is fine
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/evals/test_leakage_filter.py -v`
 Expected: FAIL with `ModuleNotFoundError` (no `evals.sets.generate`)
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # evals/sets/generate.py
@@ -2146,12 +2146,12 @@ async def draft_questions(
     return drafts
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/evals/test_leakage_filter.py -v && ruff check evals`
 Expected: 4 PASS, ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add evals/sets tests/evals/test_leakage_filter.py
@@ -2170,7 +2170,7 @@ git commit -m "feat(evals): question drafting with lexical-leakage gate"
 **Interfaces:**
 - Consumes: the full pipeline (Tasks 1–13).
 
-- [ ] **Step 1: Write the opt-in live smoke test**
+- [x] **Step 1: Write the opt-in live smoke test**
 
 ```python
 # tests/evals/test_smoke_live.py
@@ -2235,12 +2235,12 @@ async def test_live_smoke(store, tmp_path):
     assert sum(1 for r in records if r["unscored"]) == 0
 ```
 
-- [ ] **Step 2: Run the hermetic suite to confirm the smoke test is skipped**
+- [x] **Step 2: Run the hermetic suite to confirm the smoke test is skipped**
 
 Run: `pytest tests/evals -v`
 Expected: `test_smoke_live` SKIPPED, everything else PASS
 
-- [ ] **Step 3: Update README**
+- [x] **Step 3: Update README**
 
 In the "What's inside" table add:
 
@@ -2254,19 +2254,19 @@ In "Status & roadmap" add a line:
 - **Eval pipeline** — v1 ablation harness landed (spec: docs/truenorth/specs/2026-07-26-context-eval-pipeline-design.md); phase 2: LongMemEval adapter for externally comparable numbers.
 ```
 
-- [ ] **Step 4: Run the full gate**
+- [x] **Step 4: Run the full gate**
 
 Run: `pytest && ruff check .`
 Expected: full suite green (the 2 known pre-existing env-related failures on clean master are the only allowed failures — count failures before and after; the count must not grow), ruff clean
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/evals/test_smoke_live.py README.md
 git commit -m "feat(evals): live smoke test + docs"
 ```
 
-- [ ] **Step 6 (manual bring-up — operator, needs keys; not CI):**
+- [x] **Step 6 (manual bring-up — operator, needs keys; not CI):**
 
 ```bash
 # 1. Pick 8-15 public post-cutoff URLs (2026 AI-tooling release notes), add to
