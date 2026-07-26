@@ -19,6 +19,7 @@ venv/
 
 # Local data
 *.db
+!data/demo.db
 *.sqlite
 *.sqlite3
 .delapan/

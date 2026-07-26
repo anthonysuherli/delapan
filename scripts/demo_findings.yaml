@@ -1,0 +1,72 @@
+# Source of truth for data/demo.db — rebuild with scripts/build_demo_db.py.
+synopsis:
+  - topic: What delapan is
+    gloss: an agentic knowledge-base engine — research/ingest the web into per-project KBs, tap them as grounded context
+  - topic: Findings
+    gloss: the embedded unit of knowledge; every finding keeps grounded_in provenance
+  - topic: The resume loop
+    gloss: delapan_resume injects a preamble (synopsis + query-relevant findings) with a rich/sparse/gap coverage verdict
+  - topic: Explore pipeline
+    gloss: plan → search → crawl → extract → evaluate → merge; persists deduplicated findings
+  - topic: Self-correcting memory
+    gloss: writes resolve ADD/UPDATE/NOOP/SUPERSEDE against existing knowledge — nothing is deleted, only retired
+  - topic: Two storage tiers
+    gloss: local SQLite + sqlite-vec (this install) and Supabase cloud, at strict Store-protocol parity
+
+findings:
+  - title: delapan grounds answers in maintained findings
+    summary: delapan is an agentic knowledge-base engine. It researches and ingests
+      the web into per-project knowledge bases of embedded, deduplicated findings,
+      then serves them back as grounded context through MCP tools and skills.
+    category: architecture
+    tags: [overview]
+  - title: A finding is the unit of knowledge
+    summary: Each finding is an embedded row with a title, summary content, category,
+      confidence, and grounded_in provenance. Findings are never hard-deleted — a
+      superseded finding is retired via invalidated_at and superseded_by.
+    category: architecture
+    tags: [findings, provenance]
+  - title: delapan_resume returns a preamble with a coverage verdict
+    summary: The resume tool assembles a <preamble> from the KB's synopsis spine plus
+      query-relevant findings banded by similarity, and returns a coverage verdict of
+      rich, sparse, or gap. A gap verdict is the signal to run explore.
+    category: behavior
+    tags: [resume, preamble, coverage]
+  - title: The explore pipeline fills knowledge gaps from the web
+    summary: delapan_explore plans search queries, searches and crawls with Tavily,
+      extracts findings with an LLM, scores their quality, merges near-duplicates,
+      and persists the survivors to the KB. It needs AI_GATEWAY_API_KEY and
+      TAVILY_API_KEY.
+    category: behavior
+    tags: [explore, pipeline]
+  - title: Writes are self-correcting, not append-only
+    summary: New findings resolve against the top-k most similar existing findings at
+      write time. Each candidate is decided as ADD, UPDATE, NOOP, or SUPERSEDE, so
+      the KB stays compact and contradictions retire the losing finding.
+    category: architecture
+    tags: [memory, dedup]
+  - title: Two storage tiers at protocol parity
+    summary: The local tier is SQLite + sqlite-vec with no account or cloud
+      dependency; the cloud tier is Supabase (Postgres + pgvector). Both implement
+      the same Store protocol with identical return shapes.
+    category: architecture
+    tags: [store, tiers]
+  - title: The curation backlog ranks what the KB could not answer
+    summary: Every resume/search coverage verdict is recorded. Gap and sparse queries
+      aggregate into a backlog ranked by recurrence, severity, and recency —
+      delapan_explore with no prompt consumes the top item.
+    category: behavior
+    tags: [curation, backlog]
+  - title: Archiving is reversible, never destructive
+    summary: delapan_archive stamps archived_at on a project or KB and touches no
+      finding, node, or edge. Archived KBs stay readable, and exploring into one
+      unarchives it.
+    category: behavior
+    tags: [archive, lifecycle]
+  - title: The knowledge graph is co-designed through an intent schema
+    summary: delapan_propose_kg_schema drafts a target ontology from the KB's
+      findings; delapan_set_kg_schema persists the approved version; and
+      delapan_build_graph extracts a graph steered by it, keeping intent and
+      emergent structure comparable.
+    category: behavior
+    tags: [knowledge-graph, schema]
