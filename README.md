@@ -60,7 +60,7 @@ The local tier stores everything in `~/.delapan/delapan.db` (override with
 | **Pluggable storage** — `Store` protocol; ships SQLite, plus a Supabase/pgvector backend | `store/` |
 | **MCP server** | `mcp/` |
 | **Public `/api` auth** — config-forked bearer auth (Supabase JWT) + beta gate for the hosted tier; `auth: none` keeps the local tier byte-identical | `delapan/api/auth.py` |
-| **Eval harness** — closed-book/production/oracle ablation, HHEM faithfulness, retrieval + verdict-calibration metrics, paired stats, reproducible run artifacts (`python -m evals run`) | `evals/` |
+| **Eval harness** — closed-book/production/oracle ablation, HHEM faithfulness, retrieval + verdict-calibration metrics, paired stats, reproducible run artifacts (`python -m evals run`); benchmark adapters for watsonxDocsQA + MultiHop-RAG (python -m evals.adapters.<name>) | `evals/` |
 
 ## Project tracking
 
