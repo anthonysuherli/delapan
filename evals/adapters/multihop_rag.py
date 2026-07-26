@@ -49,7 +49,10 @@ def _our_type(question_type: str) -> str:
 
 
 def _stratified_sample(rows: list[dict], n: int, seed: int) -> list[dict]:
-    """Deterministic proportional sample by raw question_type, >=1 per group."""
+    """Deterministic proportional sample by raw question_type, >=1 per group.
+    When more non-empty groups exist than n, keeps first n (by sorted type
+    name) at quota=1, zeros the rest. Never decreases quota below 1 while
+    another group can still contribute."""
     if n >= len(rows):
         return sorted(rows, key=lambda r: _qid(r["query"]))
     groups: dict[str, list[dict]] = defaultdict(list)
@@ -60,8 +63,13 @@ def _stratified_sample(rows: list[dict], n: int, seed: int) -> list[dict]:
     names = sorted(groups)
     rng = random.Random(seed)
     quota = {k: max(1, round(n * len(groups[k]) / len(rows))) for k in names}
-    while sum(quota.values()) > n:  # trim largest first
-        k = max(names, key=lambda x: quota[x])
+    while sum(quota.values()) > n:  # trim largest first (but never below 1)
+        candidates = [x for x in names if quota[x] > 1]
+        if not candidates:  # more non-empty groups than n
+            for i, k in enumerate(names):
+                quota[k] = 1 if i < n else 0
+            break
+        k = max(candidates, key=lambda x: quota[x])
         quota[k] -= 1
     while sum(quota.values()) < n:
         k = max(names, key=lambda x: len(groups[x]) - quota[x])
@@ -88,10 +96,18 @@ async def build(
 
     chunks: list[Chunk] = []
     for d in docs:
-        chunks.extend(chunk_doc(str(d["url"]), str(d["title"]), str(d["body"])))
+        chunks.extend(chunk_doc(
+            str(d["url"]), str(d["title"]), str(d["body"]),
+            id_namespace=f"{project}/{kb}"
+        ))
 
     ctx = resolve_tenant(project, kb, create=True)
     store = get_store()
+    if store.count_findings(ctx.kb_id) > 0:
+        raise RuntimeError(
+            f"KB {project}/{kb} already has findings — use a fresh --kb "
+            "(re-runs would collide on deterministic ids)"
+        )
     n_chunks = await insert_chunks(
         store, org_id=ctx.org_id, kb_id=ctx.kb_id, chunks=chunks, dataset=DATASET
     )
@@ -141,7 +157,7 @@ async def build(
         "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "kb": f"{project}/{kb}", "max_docs": max_docs,
         "sample": sample, "seed": seed,
-        "sampled_question_ids": [q["id"] for q in questions],
+        "sampled_question_ids": [q["id"] for q in questions],  # post-drop: includes only kept Qs
         "counts": {"docs": len(docs), "chunks": n_chunks, "questions": len(questions)},
         "dropped_questions": dropped, "gold_fallback_questions": fallbacks,
         "doc_to_finding_ids": doc_to_ids,

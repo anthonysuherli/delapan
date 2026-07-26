@@ -35,18 +35,8 @@ def faked(store, monkeypatch, tmp_path):
     async def fake_embed_batch(texts):
         return [[1.0] + [0.0] * 1535 for _ in texts]
 
-    # Cache inserted chunks to simulate persistence across build() calls
-    inserted: dict[str, int] = {}
-
-    async def fake_insert_chunks(store, *, org_id, kb_id, chunks, dataset, **kw):
-        key = f"{org_id}/{kb_id}"
-        if key not in inserted:
-            inserted[key] = len(chunks)
-        return len(chunks)
-
     monkeypatch.setattr(mh, "load_hf", fake_load_hf)
     monkeypatch.setattr("evals.adapters.common.embed_batch", fake_embed_batch)
-    monkeypatch.setattr("evals.adapters.multihop_rag.insert_chunks", fake_insert_chunks)
     monkeypatch.setattr(mh, "SET_PATH", tmp_path / "multihop-rag-v1.yaml")
     monkeypatch.setattr(mh, "LOCK_PATH", tmp_path / "multihop-rag.lock.json")
     return tmp_path
@@ -74,3 +64,20 @@ async def test_sampling_is_deterministic_and_stratified(faked, store):
     assert lock1["sampled_question_ids"] == lock2["sampled_question_ids"]
     assert lock1["sample"] == 2 and lock1["seed"] == 7
     assert len(lock1["sampled_question_ids"]) == 2
+
+
+async def test_stratified_sampler_edge_case_more_groups_than_n(faked, store):
+    """3 singleton groups, sample=2 → exactly 2 groups picked, deterministic."""
+    lock1 = await mh.build(project="mh-edge1", kb="v1", sample=2, seed=42)
+    lock2 = await mh.build(project="mh-edge2", kb="v1", sample=2, seed=42)
+    # With seed 42, both runs should sample the same 2 group representatives
+    assert lock1["sampled_question_ids"] == lock2["sampled_question_ids"]
+    assert len(lock1["sampled_question_ids"]) == 2
+
+
+async def test_build_rejects_kb_with_existing_findings(faked, store):
+    """Building into a KB that already has findings raises RuntimeError."""
+    await mh.build(project="mh-rerun", kb="v1", sample=3, seed=0)
+    # Attempting the same build should fail (KB already has findings)
+    with pytest.raises(RuntimeError, match="already has findings"):
+        await mh.build(project="mh-rerun", kb="v1", sample=3, seed=0)

@@ -43,10 +43,18 @@ async def build(
 
     chunks: list[Chunk] = []
     for d in docs:
-        chunks.extend(chunk_doc(str(d["doc_id"]), str(d["title"]), str(d["document"])))
+        chunks.extend(chunk_doc(
+            str(d["doc_id"]), str(d["title"]), str(d["document"]),
+            id_namespace=f"{project}/{kb}"
+        ))
 
     ctx = resolve_tenant(project, kb, create=True)
     store = get_store()
+    if store.count_findings(ctx.kb_id) > 0:
+        raise RuntimeError(
+            f"KB {project}/{kb} already has findings — use a fresh --kb "
+            "(re-runs would collide on deterministic ids)"
+        )
     n = await insert_chunks(
         store, org_id=ctx.org_id, kb_id=ctx.kb_id, chunks=chunks, dataset=DATASET
     )

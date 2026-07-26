@@ -30,17 +30,22 @@ class Chunk:
     finding_id: str
 
 
-def _finding_id(doc_id: str, index: int) -> str:
-    """SHA1(doc_id#index)[:32] — deterministic chunk identifier."""
-    return hashlib.sha1(f"{doc_id}#{index}".encode()).hexdigest()[:32]
+def _finding_id(doc_id: str, index: int, namespace: str = "") -> str:
+    """SHA1(id_part#index)[:32] — deterministic chunk identifier.
+    When namespace is non-empty, id_part = namespace|doc_id."""
+    id_part = f"{namespace}|{doc_id}" if namespace else doc_id
+    return hashlib.sha1(f"{id_part}#{index}".encode()).hexdigest()[:32]
 
 
 def chunk_doc(
-    doc_id: str, title: str, text: str, max_chars: int = 1000
+    doc_id: str, title: str, text: str, max_chars: int = 1000,
+    *, id_namespace: str = ""
 ) -> list[Chunk]:
     """Split on paragraph boundaries first, then whitespace — never mid-word.
     Empty or whitespace-only text yields no chunks. Single tokens >max_chars
-    hard-split (no boundary available)."""
+    hard-split (no boundary available). When id_namespace is non-empty,
+    finding_ids are scoped to (namespace, doc_id) — prevents collisions
+    across KB reuses or re-runs with deterministic ids."""
     paras = [p.strip() for p in text.split("\n\n") if p.strip()]
     pieces: list[str] = []
     buf = ""
@@ -70,7 +75,7 @@ def chunk_doc(
             index=i,
             total=total,
             text=t,
-            finding_id=_finding_id(doc_id, i),
+            finding_id=_finding_id(doc_id, i, namespace=id_namespace),
         )
         for i, t in enumerate(pieces)
     ]

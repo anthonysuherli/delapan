@@ -118,3 +118,16 @@ def test_chunk_doc_unbroken_run_hard_splits():
     chunks = chunk_doc("d", "T", "x" * 1500, max_chars=1000)
     assert [len(c.text) for c in chunks] == [1000, 500]  # documented exception:
     # a boundary-free token cannot satisfy the no-mid-word rule
+
+
+def test_chunk_doc_namespace_prevents_collisions():
+    """Chunks with namespace have different finding_ids than without."""
+    text = "Test document content."
+    chunks_no_ns = chunk_doc("d1", "T", text)
+    chunks_ns = chunk_doc("d1", "T", text, id_namespace="proj/kb1")
+    assert chunks_no_ns[0].finding_id != chunks_ns[0].finding_id
+    # The namespaced version should include namespace in the hash
+    expected_id_no_ns = hashlib.sha1(b"d1#0").hexdigest()[:32]
+    expected_id_ns = hashlib.sha1(b"proj/kb1|d1#0").hexdigest()[:32]
+    assert chunks_no_ns[0].finding_id == expected_id_no_ns
+    assert chunks_ns[0].finding_id == expected_id_ns
