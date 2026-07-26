@@ -7,10 +7,11 @@ from __future__ import annotations
 
 from delapan.core.agent.preamble import assess_coverage, band_findings
 from delapan.core.config import get_config
+from delapan.store import Store
 from evals.scoring.retrieval import mrr, ndcg_at_k, precision_at_k, verdict_calibration
 
 
-async def golden_retrieval_metrics(spec: dict, vectors: dict, store) -> dict:
+async def golden_retrieval_metrics(spec: dict, vectors: dict, store: Store) -> dict:
     org, pid = store.resolve_project(f"evals-golden-{spec['name']}", create=True)
     kb = store.resolve_kb(org, pid, "main", create=True)
     await store.insert_findings(
