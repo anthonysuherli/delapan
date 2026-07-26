@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import subprocess
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import TypeVar
 
 from delapan.core.config import get_config
 from delapan.mcp.tenancy import resolve_tenant
+from delapan.store import Store
 from evals.answerer import CLOSED_BOOK_SYSTEM, GROUNDED_SYSTEM, answer_question
 from evals.arms import build_context
 from evals.artifact import write_run
@@ -20,10 +23,12 @@ from evals.models import Question, load_question_set
 from evals.report import render_report
 from evals.scoring.correctness import JUDGE_SYSTEM, judge
 from evals.scoring.efficiency import TOKENIZER, count_tokens
-from evals.scoring.faithfulness import load_hhem, score_faithfulness
+from evals.scoring.faithfulness import Predictor, load_hhem, score_faithfulness
+
+T = TypeVar("T")
 
 
-async def _retry_once(coro_fn):
+async def _retry_once(coro_fn: Callable[[], Awaitable[T]]) -> T:
     try:
         return await coro_fn()
     except Exception:  # noqa: BLE001 — one retry, then the caller records the error
@@ -40,8 +45,8 @@ def _git_sha() -> str:
 
 
 async def _one_record(
-    q: Question, arm: str, *, store, kb_id: str, depth: str,
-    answer_model: str, judge_model: str, predictor,
+    q: Question, arm: str, *, store: Store, kb_id: str, depth: str,
+    answer_model: str, judge_model: str, predictor: Predictor | None,
 ) -> dict:
     rec: dict = {
         "question_id": q.id, "question_type": q.type, "arm": arm, "answer": None,

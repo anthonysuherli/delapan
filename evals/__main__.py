@@ -76,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # sweep: production arm only — the other arms don't read tiers config.
+    prev = os.environ.get("DLP_TIERS__PREAMBLE_CHAR_BUDGET")
     for budget in args.budgets.split(","):
         for depth in args.depths.split(","):
             os.environ["DLP_TIERS__PREAMBLE_CHAR_BUDGET"] = budget
@@ -89,7 +90,10 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             print(f"budget={budget} depth={depth} -> {run_dir}")
-    os.environ.pop("DLP_TIERS__PREAMBLE_CHAR_BUDGET", None)
+    if prev is not None:
+        os.environ["DLP_TIERS__PREAMBLE_CHAR_BUDGET"] = prev
+    else:
+        os.environ.pop("DLP_TIERS__PREAMBLE_CHAR_BUDGET", None)
     get_config.cache_clear()
     return 0
 
