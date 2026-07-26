@@ -41,7 +41,7 @@ async def test_upsert_nodes_merges_existing(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_upsert_edges_skips_dupes_and_selfloops(monkeypatch):
-    store, fake = make_store(monkeypatch)
+    store, _fake = make_store(monkeypatch)
     n = await store.upsert_kg_edges("kb1", [
         {"source_node_id": "a", "target_node_id": "b", "relation": "r"},
         {"source_node_id": "a", "target_node_id": "b", "relation": "r"},  # dupe

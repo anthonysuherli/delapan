@@ -49,14 +49,14 @@ def test_archive_unknown_raises(store):
 
 def test_archive_mismatched_pair_raises(store):
     """A kb_id that doesn't belong to project_id must raise, not silently pass."""
-    pid, kid = _seed(store)
+    _pid, kid = _seed(store)
     _, other_pid = store.resolve_project("repoB", create=True)
     with pytest.raises(RuntimeError):
         store.set_archived(project_id=other_pid, kb_id=kid, archived=True)
 
 
 async def test_list_projects_reports_real_finding_activity(store):
-    pid, kid = _seed(store)
+    _pid, kid = _seed(store)
     await store.insert_findings([{
         "org_id": _ORG, "kb_id": kid, "title": "t", "content": "c",
         "category": "anything-at-all", "confidence": 1.0,
@@ -104,7 +104,7 @@ def test_archived_project_hidden_by_default(store):
 
 def test_project_archive_does_not_stamp_its_kbs(store):
     """Cascade-by-read: the KB row keeps its own NULL so unarchive is lossless."""
-    pid, kid = _seed(store)
+    pid, _kid = _seed(store)
     store.set_archived(project_id=pid, archived=True)
     [proj] = store.list_projects(include_archived=True)
     assert proj["archived_at"] is not None

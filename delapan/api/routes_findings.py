@@ -17,7 +17,7 @@ query the preamble is synopsis-only and works keyless (coverage = "gap").
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -50,7 +50,7 @@ def get_finding(
     ctx, store = tenancy
     try:
         return store.get_finding(ctx.kb_id, finding_id)
-    except Exception:  # noqa: BLE001 — not in this KB; try a cross-KB resolve below
+    except Exception:  # noqa: BLE001, S110 — not in this KB; try a cross-KB resolve below
         pass
     # A node/edge may cite a finding owned by another KB in the same org — e.g. a
     # unified graph merged from source KBs keeps its `grounded_in` ids, but the
@@ -58,7 +58,7 @@ def get_finding(
     # back to a global-by-id lookup before reporting the evidence as missing.
     try:
         return store.get_finding_global(finding_id)
-    except Exception as exc:  # noqa: BLE001 — store raises on a missing finding
+    except Exception as exc:
         raise HTTPException(status_code=404, detail=f"finding not found: {finding_id}") from exc
 
 
@@ -69,7 +69,7 @@ def delete_finding(
     ctx, store = tenancy
     try:
         store.get_finding(ctx.kb_id, finding_id)
-    except Exception as exc:  # noqa: BLE001 — store raises on a missing finding
+    except Exception as exc:
         raise HTTPException(status_code=404, detail=f"finding not found: {finding_id}") from exc
     store.delete_finding(ctx.kb_id, finding_id)
     return {"deleted": True}
@@ -104,5 +104,5 @@ async def backlog(
     ctx, store = tenancy
     cfg = get_config().curation
     rows = await store.list_curation_topics(ctx.kb_id, limit=500)
-    ranked = rank_backlog(rows or [], cfg, datetime.now(timezone.utc))
+    ranked = rank_backlog(rows or [], cfg, datetime.now(UTC))
     return JSONResponse({"topics": ranked[: (limit or cfg.backlog_limit)]})

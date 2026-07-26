@@ -159,7 +159,7 @@ async def resolve_and_persist(
             row["confidence"] = confidence_from_sources(_distinct_urls(row["provenance"]) or 1)
             try:
                 new_id = await store.supersede_finding(ctx.kb_id, d.target_finding_id, row)
-            except Exception:  # noqa: BLE001 — atomic: the KB is unchanged → ADD instead
+            except Exception:
                 logger.warning(
                     "resolution %s failed for target %s; falling back to ADD",
                     d.op.value, d.target_finding_id, exc_info=True,

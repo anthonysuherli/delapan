@@ -29,13 +29,13 @@ Run with: ``python -m delapan.mcp.server``.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from mcp.server.fastmcp import FastMCP
 
 from delapan.core.agent.preamble import Depth, assess_coverage, band_findings, select_preamble
-from delapan.core.agent.synopsis import maybe_rebuild_synopsis
 from delapan.core.agent.state import TenantContext
+from delapan.core.agent.synopsis import maybe_rebuild_synopsis
 from delapan.core.clients.embeddings import embed_text
 from delapan.core.config import get_config, get_settings
 from delapan.core.curation.backlog import rank_backlog
@@ -56,7 +56,7 @@ mcp = FastMCP("delapan")
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # --- Inject → this conversation --------------------------------------------
@@ -160,7 +160,7 @@ async def _explore_impl(ctx: TenantContext, prompt: str | None, max_findings: in
     if prompt is None:
         cur = get_config().curation
         rows = await store.list_curation_topics(ctx.kb_id, limit=500)
-        ranked = rank_backlog(rows or [], cur, datetime.now(timezone.utc))
+        ranked = rank_backlog(rows or [], cur, datetime.now(UTC))
         if not ranked:
             return {
                 "error": "backlog empty — pass a prompt, or run resume/search so gaps get recorded"
@@ -199,18 +199,18 @@ async def _explore_impl(ctx: TenantContext, prompt: str | None, max_findings: in
         # scheduler, gated on an approved intent schema — no-op otherwise).
         syn_status = await maybe_rebuild_synopsis(ctx.kb_id, org_id=ctx.org_id, store=store)
         schedule_kg_update(ctx, ids, store=store)
-    except Exception as exc:  # noqa: BLE001 — restore the topic, then re-raise the original
+    except Exception as exc:
         if topic_id:  # a failed run must return the topic to the backlog
             try:
                 await store.update_curation_topic(ctx.kb_id, topic_id, consumed_at=None)
-            except Exception:  # noqa: BLE001 — best-effort; the raise below is the signal
+            except Exception:  # noqa: BLE001, S110 — best-effort; the raise below is the signal
                 pass
         if exp_id is not None:  # no row to mark failed if create_exploration itself failed
             try:
                 store.update_exploration(
                     exp_id, status="failed", completed_at=_now_iso(), error=str(exc)
                 )
-            except Exception:  # noqa: BLE001 — bookkeeping must never mask the original exc
+            except Exception:  # noqa: BLE001, S110 — bookkeeping must never mask the original exc
                 pass
         raise
 
@@ -265,7 +265,7 @@ async def delapan_backlog(project: str, kb: str, limit: int | None = None) -> di
     store = get_store(ctx.access_token, org_id=ctx.org_id)
     cfg = get_config().curation
     rows = await store.list_curation_topics(ctx.kb_id, limit=500)
-    ranked = rank_backlog(rows or [], cfg, datetime.now(timezone.utc))
+    ranked = rank_backlog(rows or [], cfg, datetime.now(UTC))
     return {"topics": ranked[: (limit or cfg.backlog_limit)]}
 
 

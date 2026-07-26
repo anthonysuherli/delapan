@@ -4,10 +4,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from scripts import tracking_sync
-
 from delapan.tracking.models import BacklogItem, InitiativeRow
 from delapan.tracking.sync import SyncPlan, apply_sync, plan_sync
+from scripts import tracking_sync
 
 FIXTURES = Path(__file__).parent / "fixtures" / "tracking"
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import ClassVar
 
 import pytest
 
@@ -57,7 +58,7 @@ def _topic(tid="t1", *, text="what is csm", recurrence=3, coverage="gap"):
         "coverage": coverage,
         "recurrence": recurrence,
         "first_seen": "2026-07-16T00:00:00+00:00",
-        "last_seen": datetime.now(timezone.utc).isoformat(),
+        "last_seen": datetime.now(UTC).isoformat(),
         "consumed_at": None,
         "resolved_at": None,
     }
@@ -108,7 +109,7 @@ async def test_backlog_ranks_over_full_pool_not_just_recent_slice(monkeypatch):
     (`list_curation_topics(limit=backlog_limit)`) BEFORE ranking, so a
     genuinely top-ranked-but-stale topic could be truncated away before
     `rank_backlog` ever saw it."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stale_high = _topic("stale-high", text="stale query", recurrence=50)
     stale_high["last_seen"] = (now - timedelta(days=60)).isoformat()
     fresh_low = [_topic(f"fresh-{i}", text=f"fresh query {i}", recurrence=1) for i in range(24)]
@@ -203,7 +204,7 @@ async def test_failed_bookkeeping_does_not_mask_original_exception(patched, monk
 
 
 class _Outcome:
-    affected_finding_ids: list[str] = []
+    affected_finding_ids: ClassVar[list[str]] = []
 
 
 async def _fake_persist(*_a, **_k):

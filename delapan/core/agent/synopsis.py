@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from delapan.core.clients.ai_gateway import text_completion
 from delapan.core.clients.anthropic import chat_model, text_of
@@ -31,8 +31,8 @@ def should_rebuild(live_count: int, row: dict | None, cfg: SynopsisConfig) -> bo
         return True
     built_at = row.get("built_at")
     if built_at:
-        ts = datetime.fromisoformat(str(built_at).replace("Z", "+00:00"))
-        age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+        ts = datetime.fromisoformat(str(built_at))
+        age_h = (datetime.now(UTC) - ts).total_seconds() / 3600
         if age_h >= cfg.rebuild_max_age_hours:
             return True
     return False
@@ -111,7 +111,7 @@ async def maybe_rebuild_synopsis(
         content = await _build(findings, cfg)
         store.upsert_synopsis(kb_id, content=content, finding_count=live_count, model=cfg.model)
         return "rebuilt"
-    except Exception as exc:  # noqa: BLE001 — regen is best-effort, never breaks a turn
+    except Exception as exc:
         logger.exception("synopsis rebuild failed for kb=%s", kb_id)
         return f"failed: {exc}"
 

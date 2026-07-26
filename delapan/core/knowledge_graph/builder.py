@@ -250,7 +250,7 @@ async def _auto_kg_update(
             result.get("edges_created"),
             len(finding_ids),
         )
-    except Exception:  # noqa: BLE001 — auto-grow is best-effort, never breaks a turn
+    except Exception:
         logger.exception("auto KG update failed for kb=%s", ctx.kb_id)
 
 

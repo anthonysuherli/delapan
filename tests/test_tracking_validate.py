@@ -12,18 +12,18 @@ ROOT = Path(__file__).resolve().parents[1]  # backend repo root
 
 
 def _init(**kwargs: Any) -> InitiativeRow:
-    base: dict[str, Any] = dict(
-        slug="alpha",
-        title="Alpha",
-        status="active",
-        repo="backend",
-        blocked_by=[],
-        spec=None,
-        plan=None,
-        branch=None,
-        updated="2026-07-17",
-        body_md="x",
-    )
+    base: dict[str, Any] = {
+        "slug": "alpha",
+        "title": "Alpha",
+        "status": "active",
+        "repo": "backend",
+        "blocked_by": [],
+        "spec": None,
+        "plan": None,
+        "branch": None,
+        "updated": "2026-07-17",
+        "body_md": "x",
+    }
     base.update(kwargs)
     return InitiativeRow(**base)
 

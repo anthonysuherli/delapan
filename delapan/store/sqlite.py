@@ -33,8 +33,9 @@ import logging
 import os
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Self
 
 import sqlite_vec
 from sqlite_vec import serialize_float32
@@ -194,7 +195,7 @@ _MAX_GROUNDED = 50
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _default_db_path() -> str:
@@ -238,7 +239,7 @@ class SQLiteStore:
         """Close the underlying connection. Explicit — no atexit/__del__ magic."""
         self._conn.close()
 
-    def __enter__(self) -> "SQLiteStore":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc) -> None:
@@ -255,7 +256,7 @@ class SQLiteStore:
             try:
                 self._conn.execute(stmt)
                 self._conn.commit()
-            except Exception:  # noqa: BLE001 — column already present
+            except Exception:  # noqa: BLE001, S110 — column already present
                 pass
         # valid_from has no column default (SQLite forbids non-constant ADD COLUMN
         # defaults) — seed pre-existing rows from created_at; new rows are stamped
@@ -265,7 +266,7 @@ class SQLiteStore:
                 "UPDATE findings SET valid_from = created_at WHERE valid_from IS NULL;"
             )
             self._conn.commit()
-        except Exception:  # noqa: BLE001 — table may not exist yet on a fresh DB
+        except Exception:  # noqa: BLE001, S110 — table may not exist yet on a fresh DB
             pass
 
     # --- findings — hot path -------------------------------------------------
@@ -1261,7 +1262,7 @@ class SQLiteStore:
                 (_now_iso(), kb_id),
             )
             self._conn.commit()
-        except Exception:  # noqa: BLE001 — column may not exist yet
+        except Exception:  # noqa: BLE001, S110 — column may not exist yet
             pass
 
     # --- schema-drift offer debounce -----------------------------------------
@@ -1293,7 +1294,7 @@ class SQLiteStore:
                 (int(count), kb_id),
             )
             self._conn.commit()
-        except Exception:  # noqa: BLE001 — column may not exist yet
+        except Exception:  # noqa: BLE001, S110 — column may not exist yet
             pass
 
     # --- resolution event log ------------------------------------------------
@@ -1327,7 +1328,7 @@ class SQLiteStore:
                     ),
                 )
             self._conn.commit()
-        except Exception:  # noqa: BLE001 — audit log is best-effort; never break the caller
+        except Exception:
             logger.warning("failed to write resolution_events for kb=%s", kb_id, exc_info=True)
 
     def list_resolution_events(self, kb_id: str, limit: int | None = None) -> list[dict]:
@@ -1389,7 +1390,7 @@ class SQLiteStore:
                 ),
             )
             self._conn.commit()
-        except Exception:  # noqa: BLE001 — monitoring must never break the caller
+        except Exception:  # noqa: BLE001, S110 — monitoring must never break the caller
             pass
 
     # --- curation flywheel ---------------------------------------------------
@@ -1509,7 +1510,7 @@ class SQLiteStore:
                 (kb_id, older_than_iso),
             )
             self._conn.commit()
-        except Exception:  # noqa: BLE001 — best-effort
+        except Exception:  # noqa: BLE001, S110 — best-effort
             pass
 
 

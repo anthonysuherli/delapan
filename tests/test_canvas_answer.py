@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from delapan.core.canvas import answer as answer_mod
 from delapan.core.config import CanvasConfig
@@ -10,7 +10,7 @@ from delapan.core.exploration.models import Finding
 
 
 def _candidate(title: str) -> Finding:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return Finding(
         exploration_id="e1",
         project_id="p1",

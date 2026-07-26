@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from postgrest.exceptions import APIError
 
@@ -29,7 +29,7 @@ LIST_MAX_LIMIT = 1000
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class SupabaseStore:
@@ -355,7 +355,7 @@ class SupabaseStore:
             await asyncio.to_thread(
                 lambda: self._c.table("resolution_events").insert(payload).execute()
             )
-        except Exception:  # noqa: BLE001 — audit log is best-effort
+        except Exception:
             logger.warning("failed to write resolution_events for kb=%s", kb_id, exc_info=True)
 
     def list_resolution_events(self, kb_id: str, limit: int | None = None) -> list[dict]:
@@ -676,7 +676,7 @@ class SupabaseStore:
     def mark_init_offered(self, kb_id: str) -> None:
         try:
             self._c.table("kbs").update({"init_offered_at": _now_iso()}).eq("id", kb_id).execute()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S110
             pass
 
     def get_drift_marker(self, kb_id: str) -> int:
@@ -691,7 +691,7 @@ class SupabaseStore:
     def set_drift_marker(self, kb_id: str, count: int) -> None:
         try:
             self._c.table("kbs").update({"drift_offered_count": int(count)}).eq("id", kb_id).execute()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S110
             pass
 
     # --- monitoring (best-effort, never raises) ------------------------------
@@ -729,7 +729,7 @@ class SupabaseStore:
                         "ts": _now_iso(),
                     }
                 ).execute()
-            except Exception:  # noqa: BLE001 — monitoring must never break the caller
+            except Exception:  # noqa: BLE001, S110 — monitoring must never break the caller
                 pass
 
         await asyncio.to_thread(_run)
@@ -803,7 +803,7 @@ class SupabaseStore:
                 self._c.table("access_events").delete().eq("kb_id", kb_id).lt(
                     "ts", older_than_iso
                 ).execute()
-            except Exception:  # noqa: BLE001 — best-effort
+            except Exception:  # noqa: BLE001, S110 — best-effort
                 pass
 
         await asyncio.to_thread(_run)

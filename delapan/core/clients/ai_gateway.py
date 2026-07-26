@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncIterator
 from functools import lru_cache
-from typing import TYPE_CHECKING, AsyncIterator, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from openai import AsyncOpenAI, omit
 from pydantic import BaseModel

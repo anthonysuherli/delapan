@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -46,7 +46,7 @@ class ExploreBody(BaseModel):
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _sse(payload: dict) -> str:
@@ -83,7 +83,7 @@ async def _run_and_persist(
         )
         syn_status = await maybe_rebuild_synopsis(ctx.kb_id, org_id=ctx.org_id, store=store)
         schedule_kg_update(ctx, ids, store=store)
-    except Exception as exc:  # noqa: BLE001 — mark the row failed, then re-raise
+    except Exception as exc:
         store.update_exploration(exp_id, status="failed", completed_at=_now_iso(), error=str(exc))
         raise
 

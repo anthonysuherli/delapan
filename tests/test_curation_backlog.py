@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from delapan.core.config import CurationConfig
 from delapan.core.curation.backlog import rank_backlog
 
-NOW = datetime(2026, 7, 16, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 16, tzinfo=UTC)
 
 
 def _row(rid: str, *, recurrence: int, coverage: str, age_days: float) -> dict:
@@ -61,7 +61,7 @@ def test_aware_last_seen_with_naive_now():
     """Timezone-aware last_seen with naive now should not raise TypeError."""
     cfg = CurationConfig()
     # Create a naive now (no tzinfo)
-    now_naive = datetime(2026, 7, 16)
+    now_naive = datetime(2026, 7, 16)  # noqa: DTZ001 — naive on purpose
     # Create row with timezone-aware last_seen (UTC offset in ISO string)
     rows = [{"id": "x", "recurrence": 2, "coverage": "gap", "last_seen": "2026-07-15T00:00:00+00:00"}]
     # Should not raise; should return a valid score
@@ -73,7 +73,7 @@ def test_naive_last_seen_string():
     """Fully naive last_seen (no UTC offset in ISO string) should work."""
     cfg = CurationConfig()
     # Create a naive now (no tzinfo)
-    now_naive = datetime(2026, 7, 16)
+    now_naive = datetime(2026, 7, 16)  # noqa: DTZ001 — naive on purpose
     # Create row with naive last_seen (no timezone offset)
     rows = [{"id": "x", "recurrence": 2, "coverage": "gap", "last_seen": "2026-07-14T00:00:00"}]
     # Should not raise; should return a valid score

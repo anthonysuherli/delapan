@@ -29,7 +29,7 @@ import os
 from delapan.store.base import Store
 from delapan.store.sqlite import SQLiteStore, _default_db_path
 
-__all__ = ["Store", "SQLiteStore", "get_store", "active_backend"]
+__all__ = ["SQLiteStore", "Store", "active_backend", "get_store"]
 
 # Local stores cached by db_path so the SQLite connection is reused.
 _local_stores: dict[str, SQLiteStore] = {}

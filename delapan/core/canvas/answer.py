@@ -10,7 +10,7 @@ ground it in what this search just surfaced. Persistence is elsewhere (/keep).
 
 from __future__ import annotations
 
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from delapan.core.clients.ai_gateway import stream_text_completion
 from delapan.core.config import CanvasConfig

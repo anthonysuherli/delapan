@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from datetime import UTC
 
 import pytest
 import sqlite_vec
@@ -75,10 +76,11 @@ def test_build_unknown_project_exits(tmp_path, monkeypatch):
 def test_dash_slug_ids_map_to_consistent_uuids(tmp_path, monkeypatch):
     """Slug finding ids like 'demo-finding-001' must map to stable UUID5s,
     and every reference (in grounded_in) must resolve to the same UUID."""
-    from scripts.port_project_to_cloud import build
-    import uuid
     import json
-    from datetime import datetime, timezone
+    import uuid
+    from datetime import datetime
+
+    from scripts.port_project_to_cloud import build
 
     monkeypatch.setenv("DELAPAN_BACKEND", "local")
     monkeypatch.setenv("DELAPAN_DB_PATH", str(tmp_path / "t.db"))
@@ -113,7 +115,7 @@ def test_dash_slug_ids_map_to_consistent_uuids(tmp_path, monkeypatch):
 
     # Now insert a kg_node with grounded_in referencing the slug id
     conn = _connect(tmp_path / "t.db")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     conn.execute(
         """INSERT INTO kg_nodes
            (id, org_id, kb_id, type, label, properties, grounded_in, created_at)
@@ -132,7 +134,7 @@ def test_dash_slug_ids_map_to_consistent_uuids(tmp_path, monkeypatch):
     conn.commit()
 
     # Now call build() and verify the transformation
-    project_row, kb_rows, findings, nodes, edges = build(conn, "demo")
+    _project_row, _kb_rows, findings, nodes, _edges = build(conn, "demo")
 
     # Find the finding that was inserted with the slug id
     slug_findings = [f for f in findings if f["title"] == "SlugTitle"]

@@ -90,7 +90,7 @@ def test_archive_unknown_raises(monkeypatch):
 def test_archive_mismatched_pair_raises(monkeypatch):
     """Same contract as the SQLite tier — the pair must belong together."""
     store, _ = make_store(monkeypatch)
-    pid, kid = _seed(store)
+    _pid, kid = _seed(store)
     _, other_pid = store.resolve_project("repoB", create=True)
     with pytest.raises(RuntimeError):
         store.set_archived(project_id=other_pid, kb_id=kid, archived=True)

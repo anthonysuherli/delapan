@@ -33,10 +33,11 @@ def parse_initiative_file(path: Path) -> InitiativeRow:
         raise ValueError(f"{path}: missing YAML frontmatter")
     meta = yaml.safe_load(m.group(1)) or {}
     if not isinstance(meta, dict):
-        raise ValueError(f"{path}: frontmatter must be a mapping")
+        # malformed file content is a value problem, not a caller type bug
+        raise ValueError(f"{path}: frontmatter must be a mapping")  # noqa: TRY004
     blocked = meta.get("blocked_by") or []
     if not isinstance(blocked, list):
-        raise ValueError(f"{path}: blocked_by must be a list")
+        raise ValueError(f"{path}: blocked_by must be a list")  # noqa: TRY004
     return InitiativeRow(
         slug=path.stem,
         title=str(meta.get("title") or ""),

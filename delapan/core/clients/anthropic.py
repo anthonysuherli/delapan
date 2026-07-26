@@ -21,12 +21,12 @@ def chat_model(model: str | None = None) -> ChatAnthropic:
     settings = get_settings()
     agent = get_config().agent
 
-    kwargs: dict = dict(
-        model=model or agent.model,
-        anthropic_api_key=settings.anthropic_api_key,
-        max_tokens=agent.max_tokens,
-        streaming=True,
-    )
+    kwargs: dict = {
+        "model": model or agent.model,
+        "anthropic_api_key": settings.anthropic_api_key,
+        "max_tokens": agent.max_tokens,
+        "streaming": True,
+    }
     if agent.thinking_budget > 0:
         kwargs["temperature"] = 1.0  # required by the API when thinking is enabled
         kwargs["thinking"] = {

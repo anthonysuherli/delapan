@@ -34,7 +34,6 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-
 # =============================================================================
 # Secrets / environment-bound settings
 # =============================================================================
@@ -352,8 +351,7 @@ class DeepenConfig(BaseModel):
     def _clamp_min_rounds(self) -> DeepenConfig:
         # A min_rounds above the hard cap could never be honored — clamp so the
         # floor is always reachable (depth_cap is the unconditional bound).
-        if self.min_rounds > self.depth_cap:
-            self.min_rounds = self.depth_cap
+        self.min_rounds = min(self.min_rounds, self.depth_cap)
         return self
 
 
@@ -489,7 +487,10 @@ def _load_file(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
     if not isinstance(data, dict):
-        raise ValueError(f"config file {path} must contain a YAML mapping at the top level")
+        # malformed file content is a value problem, not a caller type bug
+        raise ValueError(  # noqa: TRY004
+            f"config file {path} must contain a YAML mapping at the top level"
+        )
     return data
 
 

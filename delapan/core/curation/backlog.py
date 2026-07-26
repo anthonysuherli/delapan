@@ -9,7 +9,7 @@ without a database and so both the MCP tool and the HTTP route share one rule.
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from delapan.core.config import CurationConfig
 
@@ -26,7 +26,7 @@ def _age_days(last_seen: str, now: datetime) -> float:
             seen = seen.replace(tzinfo=now.tzinfo)
         elif seen.tzinfo is not None and now.tzinfo is None:
             # seen is aware, now is naive: assume now is UTC
-            now_dt = now.replace(tzinfo=timezone.utc)
+            now_dt = now.replace(tzinfo=UTC)
 
         return max(0.0, (now_dt - seen).total_seconds() / 86400.0)
     except (TypeError, ValueError):

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from delapan.core.memory.models import ResolutionDecision, ResolutionOp
-
 import scripts.dedup_backfill as bf
+from delapan.core.memory.models import ResolutionDecision, ResolutionOp
 
 
 async def _seed(store, kb, title, url, emb_axis=0.01):

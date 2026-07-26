@@ -45,6 +45,6 @@ async def narrate(phase: str, context: dict[str, object], cfg: NarrationConfig) 
             max_tokens=cfg.max_tokens,
         )
         return (text or "").strip()
-    except Exception:  # noqa: BLE001 — narration is best-effort, never breaks a run
+    except Exception:
         logger.debug("narration failed for phase %s", phase, exc_info=True)
         return ""

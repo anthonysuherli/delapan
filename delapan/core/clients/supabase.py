@@ -17,14 +17,14 @@ if TYPE_CHECKING:
     from supabase import Client
 
 
-def create_client(url: str, key: str) -> "Client":
+def create_client(url: str, key: str) -> Client:
     """Thin seam over supabase.create_client (so tests can monkeypatch it)."""
     from supabase import create_client as _create
 
     return _create(url, key)
 
 
-def service_client() -> "Client":
+def service_client() -> Client:
     """Service-role client — bypasses RLS. For admin/tenancy lookups."""
     s = get_settings()
     assert s.supabase_url and s.supabase_service_role_key, (
@@ -33,7 +33,7 @@ def service_client() -> "Client":
     return create_client(s.supabase_url, s.supabase_service_role_key)
 
 
-def user_client(access_token: str) -> "Client":
+def user_client(access_token: str) -> Client:
     """Anon-key client carrying the user JWT — every call is RLS-scoped."""
     s = get_settings()
     assert s.supabase_url and s.supabase_anon_key, (

@@ -54,7 +54,7 @@ async def test_gap_with_no_match_inserts_topic():
     await _record(s, kb_id="kb1", org_id="o", surface="resume", query="what is csm",
                   coverage="gap", bands=BANDS_GAP, embedding=EMB, cfg=cfg)
     assert "record_access" in _ops(s) and "upsert" in _ops(s)
-    row = [c for c in s.calls if c[0] == "upsert"][0][1]
+    row = next(c for c in s.calls if c[0] == "upsert")[1]
     assert row["query_norm"] == "what is csm" and row["coverage"] == "gap"
 
 

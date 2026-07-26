@@ -76,7 +76,7 @@ async def test_supersede_finding_inserts_then_retires_atomically(store):
 async def test_supersede_rolls_back_when_target_missing(store):
     kb, _ = await _seed(store)
     before = store.count_findings(kb)
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError, match="not live"):
         await store.supersede_finding(
             kb, "nonexistent", {"kb_id": kb, "title": "X", "content": "y",
                                 "category": "fact", "confidence": 0.4, "tags": [],

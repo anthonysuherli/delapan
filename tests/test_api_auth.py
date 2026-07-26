@@ -8,6 +8,7 @@ import inspect
 import logging
 import sys
 import time
+from typing import ClassVar
 
 import jwt
 import pytest
@@ -278,7 +279,7 @@ def test_request_tenancy_auth_none_delegates(monkeypatch):
     from delapan.api.auth import request_tenancy
 
     class _Req:  # request is unused on the auth-none path
-        headers: dict = {}
+        headers: ClassVar[dict] = {}
 
     assert request_tenancy("p", "k", _Req()) == sentinel
     get_config.cache_clear()

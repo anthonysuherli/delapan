@@ -11,7 +11,7 @@ the node's evidence.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from delapan.core.clients.ai_gateway import text_completion
 from delapan.core.config import get_config
@@ -62,7 +62,7 @@ async def synthesize_concept_doc(store: Store, kb_id: str, node_id: str) -> dict
     for fid in grounded:
         try:
             findings.append(store.get_finding(kb_id, fid))
-        except Exception:  # noqa: BLE001 — a missing finding simply isn't briefed
+        except Exception:  # noqa: BLE001, S112 — a missing finding simply isn't briefed
             continue
 
     graph = read_graph(store, kb_id, focus=node_id, depth=1)
@@ -98,6 +98,6 @@ async def synthesize_concept_doc(store: Store, kb_id: str, node_id: str) -> dict
         "description": description.strip(),
         "body_markdown": body.strip(),
         "model": cfg.model,
-        "built_at": datetime.now(timezone.utc).isoformat(),
+        "built_at": datetime.now(UTC).isoformat(),
         "grounded_hash": grounded_hash(grounded),
     }

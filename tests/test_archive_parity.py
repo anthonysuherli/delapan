@@ -65,7 +65,7 @@ def _parses_as_timestamp(value) -> bool:
     if not isinstance(value, str):
         return False
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        datetime.fromisoformat(value)
     except ValueError:
         return False
     return True

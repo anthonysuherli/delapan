@@ -16,11 +16,11 @@ from delapan.core.exploration.models import (
 )
 
 __all__ = [
-    "ingest_pages",
-    "run_exploration",
     "ExplorationPlan",
     "Finding",
     "RawFinding",
     "SearchQuery",
     "Source",
+    "ingest_pages",
+    "run_exploration",
 ]

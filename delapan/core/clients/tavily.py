@@ -11,8 +11,9 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+from collections.abc import Awaitable, Callable
 from functools import lru_cache
-from typing import Any, Awaitable, Callable, Literal, cast
+from typing import Any, Literal, cast
 
 from delapan.core.config import get_settings
 

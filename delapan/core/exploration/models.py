@@ -9,7 +9,7 @@ structured-output schemas; `Finding` is the in-memory result the engine returns.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # -----------------------------------------------------------------------------

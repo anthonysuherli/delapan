@@ -12,6 +12,8 @@ nothing else.
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -27,7 +29,7 @@ class ArchiveRequest(BaseModel):
 
 @router.get("/projects")
 def list_projects(
-    include_archived: bool = False, store: Store = Depends(request_store)
+    store: Annotated[Store, Depends(request_store)], include_archived: bool = False
 ) -> dict:
     return {"projects": store.list_projects(include_archived=include_archived)}
 
@@ -60,7 +62,7 @@ def _archive(store, project_id: str, kb_id: str | None, archived: bool) -> dict:
 
 @router.patch("/projects/{project}")
 def archive_project(
-    project: str, body: ArchiveRequest, store: Store = Depends(request_store)
+    project: str, body: ArchiveRequest, store: Annotated[Store, Depends(request_store)]
 ) -> dict:
     project_id, _ = _resolve_ids(store, project, None)
     return _archive(store, project_id, None, body.archived)
@@ -68,7 +70,7 @@ def archive_project(
 
 @router.patch("/projects/{project}/kbs/{kb}")
 def archive_kb(
-    project: str, kb: str, body: ArchiveRequest, store: Store = Depends(request_store)
+    project: str, kb: str, body: ArchiveRequest, store: Annotated[Store, Depends(request_store)]
 ) -> dict:
     project_id, kb_id = _resolve_ids(store, project, kb)
     return _archive(store, project_id, kb_id, body.archived)

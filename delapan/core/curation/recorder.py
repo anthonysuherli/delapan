@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from delapan.core.config import CurationConfig, get_config
 from delapan.store import Store
@@ -32,7 +32,7 @@ def normalize_query(q: str) -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def schedule_record(
@@ -113,10 +113,10 @@ async def _record(
                 cfg=cfg,
             )
 
-        if random.random() < cfg.prune_sample_rate:  # noqa: S311 — sampling, not crypto
+        if random.random() < cfg.prune_sample_rate:
             horizon = (_now() - timedelta(days=cfg.events_retention_days)).isoformat()
             await store.prune_access_events(kb_id, horizon)
-    except Exception:  # noqa: BLE001 — recording must never break the caller
+    except Exception:
         logger.debug("curation: recording failed for kb=%s", kb_id, exc_info=True)
 
 

@@ -16,8 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
-from typing import AsyncIterator, Literal
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
@@ -52,7 +53,7 @@ class CanvasSearchBody(BaseModel):
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _sse(payload: dict) -> str:

@@ -98,10 +98,10 @@ async def test_get_finding_global_ignores_kb_scope(store):
         ]
     )
     # Scoped lookup from a different KB misses; global lookup resolves by PK.
-    with pytest.raises(Exception):
+    with pytest.raises(RuntimeError, match="finding not found"):
         store.get_finding(kb_b, "g1")
     assert store.get_finding_global("g1")["title"] == "G"
-    with pytest.raises(Exception):
+    with pytest.raises(RuntimeError, match="finding not found"):
         store.get_finding_global("missing")
 
 

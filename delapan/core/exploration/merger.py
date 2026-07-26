@@ -7,7 +7,7 @@ unions content/provenance, and recomputes confidence from unique source count.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from difflib import SequenceMatcher
 
 from delapan.core.exploration.models import Finding
@@ -38,7 +38,7 @@ class FindingMerger:
             by_category.setdefault(f.category, []).append(f)
 
         merged: list[Finding] = []
-        for _category, group in by_category.items():
+        for group in by_category.values():
             clusters: list[list[Finding]] = []
             for finding in group:
                 placed = False
@@ -96,7 +96,7 @@ class FindingMerger:
                                 "source_count": source_count,
                                 "confidence": blended_confidence(source_count, best.quality),
                                 "created_at": earliest_created,
-                                "updated_at": datetime.now(timezone.utc),
+                                "updated_at": datetime.now(UTC),
                             }
                         )
                     )

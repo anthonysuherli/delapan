@@ -24,7 +24,7 @@ def combined(monkeypatch, tmp_path):
 
     get_settings.cache_clear()
     get_config.cache_clear()
-    import delapan.mcp.cloud_server as cloud_server
+    from delapan.mcp import cloud_server
 
     # cloud_server computes _settings/_cloud_server_url at import time — reload
     # so it picks up this test's env rather than whatever an earlier import saw.

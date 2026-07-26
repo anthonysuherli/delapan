@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
-from typing import Awaitable, Callable
 
 from pydantic import BaseModel, Field
 

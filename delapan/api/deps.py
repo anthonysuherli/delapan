@@ -23,7 +23,7 @@ def resolve_kb_or_404(project: str, kb: str) -> tuple[TenantContext, Store]:
     """Resolve `{project}/{kb}` by name (never creating) → (ctx, scoped store)."""
     try:
         ctx = resolve_tenant(project, kb, create=False)
-    except Exception as exc:  # noqa: BLE001 — any resolution failure → 404
+    except Exception as exc:
         raise HTTPException(
             status_code=404, detail=f"project/KB not found: {project}/{kb}"
         ) from exc

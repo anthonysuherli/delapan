@@ -51,7 +51,7 @@ def _schema_block(schema: KGSchema) -> str:
     Soft mode: out-of-schema signal is KEPT (typed 'other'), never dropped — so a
     too-narrow schema degrades gracefully instead of losing findings."""
 
-    def _node_line(nt) -> str:  # noqa: ANN001 — local formatter over schema.NodeType
+    def _node_line(nt) -> str:
         head = f"{nt.name} — {nt.description}" if nt.description else nt.name
         if nt.layer:
             head += f" [layer: {nt.layer}]"

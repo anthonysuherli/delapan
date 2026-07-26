@@ -31,9 +31,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "001",
         "Episodic vs semantic memory in LLM agents",
-        "Agent memory work borrows the cognitive split between episodic memory (specific "
+        ("Agent memory work borrows the cognitive split between episodic memory (specific "
         "interaction traces) and semantic memory (distilled facts). Most production systems "
-        "store both but retrieve them through different indexes.",
+        "store both but retrieve them through different indexes."),
         "concept",
         0.9,
         "https://arxiv.org/abs/2404.13501",
@@ -41,9 +41,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "002",
         "MemGPT introduces OS-inspired memory paging",
-        "MemGPT treats the context window as main memory and external storage as disk, paging "
+        ("MemGPT treats the context window as main memory and external storage as disk, paging "
         "context in and out via self-issued function calls. The agent manages its own memory "
-        "hierarchy instead of relying on a fixed retriever.",
+        "hierarchy instead of relying on a fixed retriever."),
         "architecture",
         0.95,
         "https://arxiv.org/abs/2310.08560",
@@ -51,9 +51,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "003",
         "Vector stores as long-term memory backends",
-        "Embedding-indexed stores (pgvector, sqlite-vec, FAISS) remain the default long-term "
+        ("Embedding-indexed stores (pgvector, sqlite-vec, FAISS) remain the default long-term "
         "memory substrate: cheap writes, semantic reads, no schema. Weak at temporal and "
-        "relational queries compared to graph-backed memory.",
+        "relational queries compared to graph-backed memory."),
         "technique",
         0.85,
         "https://www.pinecone.io/learn/vector-database/",
@@ -61,9 +61,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "004",
         "Reflexion: verbal reinforcement via episodic memory",
-        "Reflexion agents store self-generated critiques of failed attempts in an episodic "
+        ("Reflexion agents store self-generated critiques of failed attempts in an episodic "
         "buffer and condition retries on them — memory as a learning signal without weight "
-        "updates.",
+        "updates."),
         "technique",
         0.9,
         "https://arxiv.org/abs/2303.11366",
@@ -71,9 +71,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "005",
         "Generative Agents' memory stream and retrieval scoring",
-        "The Stanford Generative Agents paper logs every observation to an append-only memory "
+        ("The Stanford Generative Agents paper logs every observation to an append-only memory "
         "stream and retrieves by a weighted sum of recency, importance, and relevance — the "
-        "scoring recipe most agent frameworks copied.",
+        "scoring recipe most agent frameworks copied."),
         "architecture",
         0.95,
         "https://arxiv.org/abs/2304.03442",
@@ -81,9 +81,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "006",
         "Recency, importance, relevance scoring for retrieval",
-        "Triple-factor retrieval scoring (exponential recency decay x LLM-rated importance x "
+        ("Triple-factor retrieval scoring (exponential recency decay x LLM-rated importance x "
         "cosine relevance) outperforms pure similarity for agent memory because it favors "
-        "fresh, salient context.",
+        "fresh, salient context."),
         "technique",
         0.8,
         "https://arxiv.org/abs/2304.03442",
@@ -91,9 +91,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "007",
         "Letta productionizes MemGPT memory blocks",
-        "Letta (the MemGPT successor) ships named, size-bounded memory blocks (persona, human, "
+        ("Letta (the MemGPT successor) ships named, size-bounded memory blocks (persona, human, "
         "task) that the agent edits with tools; blocks persist across sessions and are visible "
-        "in every prompt.",
+        "in every prompt."),
         "tool",
         0.85,
         "https://docs.letta.com/concepts/memgpt",
@@ -101,9 +101,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "008",
         "LangMem SDK for agent memory",
-        "LangChain's LangMem provides hot-path and background memory managers that extract, "
+        ("LangChain's LangMem provides hot-path and background memory managers that extract, "
         "consolidate, and retrieve memories from conversations, exposing semantic, episodic, "
-        "and procedural memory types.",
+        "and procedural memory types."),
         "tool",
         0.8,
         "https://blog.langchain.dev/langmem-sdk-launch/",
@@ -111,9 +111,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "009",
         "Zep: temporal knowledge graph memory",
-        "Zep stores conversational memory as a temporal knowledge graph (Graphiti): facts carry "
+        ("Zep stores conversational memory as a temporal knowledge graph (Graphiti): facts carry "
         "valid-from/valid-to intervals, so the agent can answer what was true when — a query "
-        "class flat vector stores cannot serve.",
+        "class flat vector stores cannot serve."),
         "tool",
         0.85,
         "https://arxiv.org/abs/2501.13956",
@@ -121,9 +121,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "010",
         "Mem0 layered memory architecture",
-        "Mem0 layers working, episodic, and factual memory with an extraction pipeline that "
+        ("Mem0 layers working, episodic, and factual memory with an extraction pipeline that "
         "decides what to remember after each exchange, claiming large token savings versus "
-        "full-history prompting on LOCOMO.",
+        "full-history prompting on LOCOMO."),
         "tool",
         0.8,
         "https://arxiv.org/abs/2504.19413",
@@ -131,9 +131,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "011",
         "Context window limits drive external memory",
-        "Even million-token contexts degrade (lost-in-the-middle, cost, latency), so external "
+        ("Even million-token contexts degrade (lost-in-the-middle, cost, latency), so external "
         "memory is an architectural necessity, not a stopgap: agents must select context, not "
-        "accumulate it.",
+        "accumulate it."),
         "challenge",
         0.9,
         "https://arxiv.org/abs/2307.03172",
@@ -141,9 +141,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "012",
         "Catastrophic forgetting in long-horizon agents",
-        "Naive summarize-and-truncate loops lose task-critical details over long horizons; "
+        ("Naive summarize-and-truncate loops lose task-critical details over long horizons; "
         "agents need explicit write policies and consolidation instead of lossy rolling "
-        "summaries.",
+        "summaries."),
         "challenge",
         0.85,
         "https://arxiv.org/abs/2402.18540",
@@ -151,9 +151,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "013",
         "Memory consolidation via periodic summarization",
-        "Consolidation jobs compress raw episodic traces into semantic summaries on a schedule "
+        ("Consolidation jobs compress raw episodic traces into semantic summaries on a schedule "
         "(end of session, token threshold), mirroring sleep-phase consolidation in biological "
-        "memory.",
+        "memory."),
         "technique",
         0.8,
         "https://arxiv.org/abs/2308.15022",
@@ -161,9 +161,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "014",
         "HippoRAG applies hippocampal indexing theory to RAG",
-        "HippoRAG builds an open knowledge graph over the corpus and runs personalized PageRank "
+        ("HippoRAG builds an open knowledge graph over the corpus and runs personalized PageRank "
         "from query entities — modeling the hippocampal index over neocortical traces — beating "
-        "iterative RAG on multi-hop QA.",
+        "iterative RAG on multi-hop QA."),
         "architecture",
         0.9,
         "https://arxiv.org/abs/2405.14831",
@@ -171,9 +171,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "015",
         "Knowledge-graph memory vs flat vector memory",
-        "Graph-backed memory wins on multi-hop, temporal, and aggregation queries; vector "
+        ("Graph-backed memory wins on multi-hop, temporal, and aggregation queries; vector "
         "memory wins on write simplicity and fuzzy recall. Hybrid systems (graph + embeddings "
-        "per node) are converging as the default.",
+        "per node) are converging as the default."),
         "concept",
         0.85,
         "https://neo4j.com/blog/genai/knowledge-graph-vs-vector-rag/",
@@ -181,9 +181,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "016",
         "LOCOMO benchmarks long-term conversational memory",
-        "LOCOMO evaluates very long conversations (300+ turns) with QA over single-hop, "
+        ("LOCOMO evaluates very long conversations (300+ turns) with QA over single-hop, "
         "multi-hop, temporal, and adversarial questions — the de facto benchmark memory vendors "
-        "report against.",
+        "report against."),
         "evaluation",
         0.9,
         "https://arxiv.org/abs/2402.17753",
@@ -191,8 +191,8 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "017",
         "GoodAI LTM benchmark stresses continual recall",
-        "GoodAI's LTM benchmark interleaves distractor tasks between fact insertion and recall, "
-        "testing integration and update of memories rather than single-prompt retrieval.",
+        ("GoodAI's LTM benchmark interleaves distractor tasks between fact insertion and recall, "
+        "testing integration and update of memories rather than single-prompt retrieval."),
         "evaluation",
         0.75,
         "https://github.com/GoodAI/goodai-ltm-benchmark",
@@ -200,9 +200,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "018",
         "Working memory as scratchpad in ReAct loops",
-        "The ReAct pattern's thought-action-observation trace is a working memory: it holds "
+        ("The ReAct pattern's thought-action-observation trace is a working memory: it holds "
         "intermediate state for the current task and is discarded after, distinct from "
-        "persistent stores.",
+        "persistent stores."),
         "concept",
         0.8,
         "https://arxiv.org/abs/2210.03629",
@@ -210,9 +210,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "019",
         "Procedural memory stores learned skills",
-        "Procedural memory persists how-to knowledge — tool-use routines, code snippets, "
+        ("Procedural memory persists how-to knowledge — tool-use routines, code snippets, "
         "prompts that worked — so agents improve at recurring tasks; Voyager's skill library is "
-        "the canonical example.",
+        "the canonical example."),
         "concept",
         0.8,
         "https://arxiv.org/abs/2305.16291",
@@ -220,9 +220,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "020",
         "Memory write policies: deciding what to persist",
-        "Write-time gating (LLM judges salience before persisting) beats store-everything: it "
+        ("Write-time gating (LLM judges salience before persisting) beats store-everything: it "
         "cuts retrieval noise and storage cost, at the risk of dropping facts that only later "
-        "become relevant.",
+        "become relevant."),
         "technique",
         0.75,
         "https://arxiv.org/abs/2502.12110",
@@ -230,9 +230,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "021",
         "Forgetting curves and memory decay schedules",
-        "Decay schedules (exponential down-weighting, TTL eviction, Ebbinghaus-style "
+        ("Decay schedules (exponential down-weighting, TTL eviction, Ebbinghaus-style "
         "reinforcement on access) keep memory stores bounded and bias retrieval toward "
-        "still-relevant facts.",
+        "still-relevant facts."),
         "technique",
         0.7,
         "https://arxiv.org/abs/2404.00573",
@@ -240,9 +240,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "022",
         "Privacy risks of persistent agent memory",
-        "Persistent memory accumulates PII across sessions; leakage through retrieval into "
+        ("Persistent memory accumulates PII across sessions; leakage through retrieval into "
         "unrelated contexts and the difficulty of honoring deletion requests are open "
-        "compliance problems.",
+        "compliance problems."),
         "challenge",
         0.8,
         "https://arxiv.org/abs/2409.00729",
@@ -250,9 +250,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "023",
         "Shared memory coordinates multi-agent systems",
-        "Multi-agent frameworks use shared memory (blackboards, shared vector stores, common "
+        ("Multi-agent frameworks use shared memory (blackboards, shared vector stores, common "
         "KGs) for coordination; consistency and write contention mirror classic distributed-"
-        "systems problems.",
+        "systems problems."),
         "concept",
         0.75,
         "https://arxiv.org/abs/2402.01680",
@@ -260,9 +260,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "024",
         "A-Mem links memories into a Zettelkasten graph",
-        "A-Mem stores each memory as an atomic note, auto-generates links to related notes, and "
+        ("A-Mem stores each memory as an atomic note, auto-generates links to related notes, and "
         "evolves old notes when new ones arrive — a dynamic, self-organizing memory graph "
-        "without a fixed schema.",
+        "without a fixed schema."),
         "architecture",
         0.8,
         "https://arxiv.org/abs/2502.12110",
@@ -270,9 +270,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "025",
         "RAG is the substrate most agent memory builds on",
-        "Most agent memory systems are specialized RAG: write path (extract, embed, store) plus "
+        ("Most agent memory systems are specialized RAG: write path (extract, embed, store) plus "
         "read path (retrieve, rerank, inject). Innovations differ mainly in what gets written "
-        "and how retrieval is scored.",
+        "and how retrieval is scored."),
         "concept",
         0.85,
         "https://arxiv.org/abs/2312.10997",
@@ -280,9 +280,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "026",
         "Memory poisoning attacks on agent stores",
-        "Adversarial content can plant persistent false memories that later steer agent "
+        ("Adversarial content can plant persistent false memories that later steer agent "
         "behavior (e.g. exfiltration instructions recalled as trusted context); write-time "
-        "provenance checks are the main defense.",
+        "provenance checks are the main defense."),
         "challenge",
         0.75,
         "https://arxiv.org/abs/2407.12784",
@@ -290,9 +290,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "027",
         "Needle-in-a-haystack tests overstate memory ability",
-        "High needle-in-a-haystack scores don't transfer to realistic memory use: retrieval "
+        ("High needle-in-a-haystack scores don't transfer to realistic memory use: retrieval "
         "from clean planted text ignores integration, updating, and conflicting-fact "
-        "resolution that real agent memory requires.",
+        "resolution that real agent memory requires."),
         "evaluation",
         0.7,
         "https://arxiv.org/abs/2407.01437",
@@ -300,9 +300,9 @@ FINDINGS: list[tuple[str, str, str, str, float, str]] = [
     (
         "028",
         "Sleep-time compute reorganizes memory offline",
-        "Letta's sleep-time compute runs background agents that re-derive and reorganize memory "
+        ("Letta's sleep-time compute runs background agents that re-derive and reorganize memory "
         "between sessions — trading idle compute for better-organized context at interaction "
-        "time.",
+        "time."),
         "technique",
         0.7,
         "https://arxiv.org/abs/2504.13171",
@@ -516,7 +516,7 @@ async def seed() -> None:
         try:
             store.get_finding(kb_id, fid(suffix))
             continue  # already seeded
-        except Exception:  # noqa: BLE001 — store raises on a missing finding
+        except Exception:  # noqa: BLE001, S110 — store raises on a missing finding
             pass
         domain = url.split("/")[2]
         new_rows.append(

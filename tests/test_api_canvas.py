@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -56,7 +56,7 @@ def _frames(sse_text: str) -> list[dict]:
 
 
 def _candidate(title: str) -> Finding:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return Finding(
         exploration_id="e1",
         project_id="p1",
@@ -266,7 +266,7 @@ def test_rekeep_noop_produces_no_duplicates(client, kb, keep_env, monkeypatch):
 
 
 def test_keep_clamps_count_and_content(client, kb, keep_env, monkeypatch):
-    store, kb_id = kb
+    _store, _kb_id = kb
     persist_mod = keep_env
     seen = {}
 

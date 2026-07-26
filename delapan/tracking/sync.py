@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
 from delapan.tracking.models import BacklogItem, InitiativeRow
@@ -71,7 +71,7 @@ def apply_sync(client: TrackingTableClient, plan: SyncPlan, *, dry_run: bool) ->
         print(f"dry-run: rewrite backlog ({len(plan.backlog)} items)")
         return
 
-    synced_at = datetime.now(timezone.utc).isoformat()
+    synced_at = datetime.now(UTC).isoformat()
     if plan.upserts:
         client.table("tracking_initiatives").upsert(
             [_initiative_payload(row, synced_at) for row in plan.upserts]

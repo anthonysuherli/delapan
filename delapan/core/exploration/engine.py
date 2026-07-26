@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Awaitable, Callable, TypeVar
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import TypeVar
 from urllib.parse import urlparse
 
 from delapan.core.clients import tavily
@@ -109,7 +110,7 @@ async def run_exploration(
         for src in sources:
             if content_by_url.get(src.url):
                 src.was_crawled = True
-                src.crawled_at = datetime.now(timezone.utc)
+                src.crawled_at = datetime.now(UTC)
 
         # Phases 4–5 — extract, evaluate, merge (shared with the agent path).
         findings = await ingest_pages(
