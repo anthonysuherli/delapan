@@ -60,6 +60,7 @@ The local tier stores everything in `~/.delapan/delapan.db` (override with
 | **Pluggable storage** — `Store` protocol; ships SQLite, plus a Supabase/pgvector backend | `store/` |
 | **MCP server** | `mcp/` |
 | **Public `/api` auth** — config-forked bearer auth (Supabase JWT) + beta gate for the hosted tier; `auth: none` keeps the local tier byte-identical | `delapan/api/auth.py` |
+| **Eval harness** — closed-book/production/oracle ablation, HHEM faithfulness, retrieval + verdict-calibration metrics, paired stats, reproducible run artifacts (`python -m evals run`) | `evals/` |
 
 ## Project tracking
 
@@ -150,6 +151,8 @@ pytest && ruff check .
   two-user isolation acceptance test; `build_combined_app()` (`delapan/mcp/cloud_server.py`)
   serves REST `/api` beside the MCP server for a single Fly deploy. The local tier is unaffected
   (`auth: none` default).
+
+- **Eval pipeline** — v1 ablation harness landed (spec: docs/truenorth/specs/2026-07-26-context-eval-pipeline-design.md); phase 2: LongMemEval adapter for externally comparable numbers.
 
 **Next:**
 - Public release phases 2–3: frontend auth screens, `/app` guard + waitlist gate, landing/legal
