@@ -48,6 +48,7 @@ from delapan.core.memory.persist import resolve_and_persist
 from delapan.store import get_store
 
 from .banner import DELAPAN_BANNER
+from .onboarding import kb_not_found_card
 from .tenancy import resolve_store, resolve_tenant
 
 logger = logging.getLogger(__name__)
@@ -81,8 +82,8 @@ async def delapan_resume(
     ``/v1/preamble`` serves to apps (both go through ``select_preamble``)."""
     try:
         ctx = resolve_tenant(project, kb, create=False)
-    except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
-        return {"error": f"KB not found ({project}/{kb}): {exc}"}
+    except Exception as exc:  # noqa: BLE001 — onboarding card for a missing project/KB
+        return kb_not_found_card(project, kb, exc, store=resolve_store())
     return await _resume_impl(ctx, query, depth)
 
 

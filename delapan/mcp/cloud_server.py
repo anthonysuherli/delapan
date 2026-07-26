@@ -28,6 +28,7 @@ from delapan.core.agent.preamble import Depth
 from delapan.core.config import get_settings
 
 from .cloud_auth import SupabaseTokenVerifier
+from .onboarding import kb_not_found_card
 from .server import _explore_impl, _projects_impl, _resume_impl, _search_impl
 from .tenancy import resolve_store_for_token, resolve_tenant_for_token
 
@@ -71,8 +72,10 @@ async def delapan_resume(
     caller = _caller()
     try:
         ctx = resolve_tenant_for_token(caller.subject, caller.token, project, kb, create=False)
-    except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
-        return {"error": f"KB not found ({project}/{kb}): {exc}"}
+    except Exception as exc:  # noqa: BLE001 — onboarding card for a missing project/KB
+        return kb_not_found_card(
+            project, kb, exc, store=resolve_store_for_token(caller.subject, caller.token)
+        )
     return await _resume_impl(ctx, query, depth)
 
 
