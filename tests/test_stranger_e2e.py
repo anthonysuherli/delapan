@@ -42,7 +42,10 @@ async def test_stranger_round_trip(tmp_path):
         "SUPABASE_SERVICE_ROLE_KEY": "",
         # reuse the real uv cache so the cold start doesn't re-download the world
         "UV_CACHE_DIR": os.environ.get("UV_CACHE_DIR", str(Path.home() / ".cache" / "uv")),
-        "UV_PROJECT_ENVIRONMENT": str(REPO / ".venv"),
+        # dedicated env dir: the wrapper's `uv run --extra local` SYNCS its env to
+        # exactly that extra set, which would prune dev/cloud packages out of the
+        # shared repo .venv while the rest of the suite is running from it
+        "UV_PROJECT_ENVIRONMENT": str(tmp_path / "uv-env"),
     }
     params = StdioServerParameters(command=str(WRAPPER), env=env)
     async with asyncio.timeout(300):  # bound cold uv resolve + handshake; hang → fail, not wedge

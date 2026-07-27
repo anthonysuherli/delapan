@@ -1,6 +1,6 @@
 [project]
 name = "delapan"
-version = "0.1.0"
+version = "0.2.0"
 description = "Open-core grounding engine: ground -> grow -> answer. Local SQLite, MCP-native."
 requires-python = ">=3.11"
 license = { text = "AGPL-3.0-or-later" }

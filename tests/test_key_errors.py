@@ -61,6 +61,54 @@ async def test_explore_preflight_blocks_before_run(keyless_env):
 
 
 @pytest.mark.asyncio
+async def test_build_graph_preflight_blocks_before_run(keyless_env):
+    import delapan.mcp.server as s
+    from delapan.store import get_store
+
+    store = get_store()
+    org_id, project_id = store.resolve_project("p", create=True)
+    store.resolve_kb(org_id, project_id, "k", create=True)
+    res = await s.delapan_build_graph("p", "k")
+    assert "build_graph needs an LLM credential" in res["error"]
+    assert "AI_GATEWAY_API_KEY" in res["error"] and ".env" in res["error"]
+
+
+@pytest.mark.asyncio
+async def test_propose_kg_schema_preflight_blocks_before_run(keyless_env):
+    import delapan.mcp.server as s
+    from delapan.store import get_store
+
+    store = get_store()
+    org_id, project_id = store.resolve_project("p", create=True)
+    store.resolve_kb(org_id, project_id, "k", create=True)
+    res = await s.delapan_propose_kg_schema("p", "k")
+    assert "propose_kg_schema needs an LLM credential" in res["error"]
+    assert "AI_GATEWAY_API_KEY" in res["error"] and ".env" in res["error"]
+
+
+@pytest.mark.asyncio
+async def test_kg_preflight_omits_env_advice_on_cloud_tier(keyless_env, monkeypatch):
+    monkeypatch.setenv("DELAPAN_BACKEND", "cloud")
+    import delapan.mcp.server as s
+    from delapan.core.agent.state import TenantContext
+
+    ctx = TenantContext(
+        user_id="u",
+        org_id="o",
+        project_id="p",
+        kb_id="k",
+        thread_id="t",
+        access_token="tok",
+    )
+    for res in (
+        await s._build_graph_impl(ctx, None, True, True),
+        await s._propose_kg_schema_impl(ctx, None),
+    ):
+        assert ".env" not in res["error"]
+        assert "AI_GATEWAY_API_KEY" in res["error"]
+
+
+@pytest.mark.asyncio
 async def test_explore_preflight_omits_env_advice_on_cloud_tier(keyless_env, monkeypatch):
     monkeypatch.setenv("DELAPAN_BACKEND", "cloud")
     import delapan.mcp.server as s
