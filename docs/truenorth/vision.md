@@ -93,7 +93,15 @@ activity reporting you can trust.
   env (`DLP_<SECTION>__<FIELD>`). The backend selector and mem0 knobs live in
   `config.yaml`.
 - The KG extraction model stays a **frontier model by default** (the graph is the
-  trust artifact).
+  trust artifact). Cost pressure is never sufficient reason to lower it. This
+  invariant scopes to `knowledge_graph.extraction_model` alone — the exploration,
+  deepen, synopsis, and narration lineups carry no frontier requirement and may be
+  tuned for cost.
+- **AI spend is bounded and observable by construction.** Every pipeline reaching
+  the AI Gateway runs under an explicit pre-request budget ceiling, and every LLM
+  call is metered regardless of entry path (HTTP API, MCP tool, or direct
+  process). A pipeline that can spend without a ceiling, or spend without being
+  recorded, is an unfinished feature.
 - Every cloud table carrying tenant data has **org-scoped RLS on reads and
   writes (`WITH CHECK`), verified by audit/test** — isolation by construction,
   not convention.
@@ -214,3 +222,23 @@ activity reporting you can trust.
   tier; 2026-07-19 launch-readiness research (24 findings → `delapan/master`,
   full report in the public-release spec). — Ratified by: anthonysuherli
   (session 2026-07-19)
+- 2026-07-27 — **Scoped the frontier-extraction invariant and added a spend
+  invariant.** The frontier requirement now explicitly covers
+  `knowledge_graph.extraction_model` only (currently `anthropic/claude-opus-4.8`),
+  making clear that the exploration, deepen, synopsis, and narration lineups carry
+  no frontier obligation and may be tuned for cost. Motivated by a Vercel/AI-Gateway
+  cost review: the invariant was being read as blocking all model-cost work, but KG
+  builds are low-frequency full rebuilds with bounded cost, while the actual burn
+  sits in paths the invariant never covered — `deepen.decompose_model` and
+  `deepen.critic_model` (both Opus 4.8, up to 3 rounds × 4 facets; the largest
+  metered line item observed) and `exploration.reasoning_effort: high`. Note
+  `knowledge_graph.reasoning_effort` is `null` and independent of the exploration
+  knob, so exploration effort changes never touch KG extraction.
+  **Added invariant "AI spend is bounded and observable by construction"** — every
+  Gateway-reaching pipeline runs under a pre-request budget ceiling and every LLM
+  call is metered regardless of entry path. Motivated by two findings this session:
+  a $0 Gateway credit balance returns HTTP 402 on *every* engine call (taking down
+  explore, synopsis, and chat alike, visible only in process logs) with no budget
+  guard anywhere; and `usage_events` recorded zero rows for three explores run via
+  the fresh-process/MCP path, so `/ops/costs` under-reports real burn.
+  — Ratified by: anthonysuherli (session 2026-07-27)
