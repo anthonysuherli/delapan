@@ -55,7 +55,7 @@ async def build_corpus(
     ctx = resolve_tenant(project, kb, create=True)
     from delapan.store import get_store
 
-    store = get_store()
+    store = get_store(ctx.access_token, org_id=ctx.org_id)
     cfg = get_config()
     exploration_id = uuid.uuid4().hex
 

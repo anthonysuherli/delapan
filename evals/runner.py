@@ -102,7 +102,7 @@ async def run_eval(
     ctx = resolve_tenant(project, kb, create=False)
     from delapan.store import get_store
 
-    store = get_store()
+    store = get_store(ctx.access_token, org_id=ctx.org_id)
     predictor = load_hhem() if use_hhem else None
 
     records = [

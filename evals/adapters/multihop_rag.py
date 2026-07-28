@@ -103,7 +103,7 @@ async def build(
         ))
 
     ctx = resolve_tenant(project, kb, create=True)
-    store = get_store()
+    store = get_store(ctx.access_token, org_id=ctx.org_id)
     if store.count_findings(ctx.kb_id) > 0:
         raise RuntimeError(
             f"KB {project}/{kb} already has findings — use a fresh --kb "
