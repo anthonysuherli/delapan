@@ -92,7 +92,14 @@ exploration:
   extraction_model: google/gemini-3.1-pro-preview   # extracts findings from pages (cost/quality frontier, 1M ctx)
   extraction_fallback_model: google/gemini-3.5-flash  # cheap retry model on extraction failure (high volume)
   temperature: 0.0
-  reasoning_effort: high              # Gemini/gateway thinking level for planning + extraction ("low"|"medium"|"high")
+  reasoning_effort: high              # shared fallback; planner inherits it
+  # Planning decides query diversity — keep it expensive. There is a known defect
+  # where explore collapses onto a single subtopic while coverage reads "rich",
+  # and lowering planner effort risks worsening it.
+  planner_reasoning_effort: high
+  # High-volume, per-page. Thinking tokens bill as full-price output, so this is
+  # where the token saving actually comes from.
+  extraction_reasoning_effort: medium
   # search (Tavily)
   search_depth: advanced              # "basic" | "advanced"
   search_mode: auto                   # auto | agent | tavily — "auto" hands off to the calling agent (WebSearch/WebFetch) when no TAVILY_API_KEY is set
@@ -136,7 +143,9 @@ deepen:
   coverage_target: 0.8      # critic coverage at/above which the loop may stop
   facets_per_round: 4       # cap on next-round facets proposed by the critic
   max_concurrent_facets: 4  # outer fan-out semaphore (× per-explore extraction cap)
-  decompose_model: anthropic/claude-opus-4.8
+  # Decomposition is structural fan-out (topic → 3-5 facets) and runs at
+  # depth_cap × facets_per_round volume — the cheaper half of deepen.
+  decompose_model: google/gemini-3.1-pro-preview
   critic_model: anthropic/claude-opus-4.8
   temperature: 0.0
   reasoning_effort: null
