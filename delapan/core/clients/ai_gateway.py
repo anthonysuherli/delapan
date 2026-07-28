@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from openai.types.shared.reasoning_effort import ReasoningEffort
 
 from delapan.core.config import get_settings
+from delapan.core.monitoring.usage_recorder import record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,19 @@ def gateway_client() -> AsyncOpenAI:
     """Memoized AsyncOpenAI pointed at the AI Gateway base URL."""
     s = get_settings()
     return AsyncOpenAI(api_key=s.ai_gateway_api_key, base_url=s.ai_gateway_base_url)
+
+
+async def _meter(model: str, completion: object) -> None:
+    """Record token usage off an OpenAI-shaped completion (or a stream's final
+    usage chunk). Metering lives here, at the one seam every LLM call funnels
+    through, so the HTTP API, the MCP tools and a bare fresh-process run are all
+    metered identically. Best-effort — never raises."""
+    usage = getattr(completion, "usage", None)
+    await record_usage(
+        model=model,
+        in_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+        out_tokens=getattr(usage, "completion_tokens", 0) or 0,
+    )
 
 
 async def text_completion(
@@ -58,6 +72,7 @@ async def text_completion(
         temperature=temperature,
         max_tokens=max_tokens if max_tokens is not None else omit,
     )
+    await _meter(model, completion)
     return completion.choices[0].message.content or ""
 
 
@@ -73,18 +88,28 @@ async def stream_text_completion(
 
     ``messages`` are ``{"role", "content"}`` turns appended after the system
     message (a chat thread). Structured output and fallback models don't apply
-    here; a transport/provider failure raises to the caller mid-stream."""
+    here; a transport/provider failure raises to the caller mid-stream.
+
+    ``stream_options.include_usage`` asks the gateway for a final usage-only
+    chunk so the call can be metered like the non-streaming paths; a provider
+    that ignores it simply goes unmetered rather than failing the stream."""
     stream = await gateway_client().chat.completions.create(
         model=model,
         messages=[{"role": "system", "content": system}, *messages],
         temperature=temperature,
         max_tokens=max_tokens if max_tokens is not None else omit,
         stream=True,
+        stream_options={"include_usage": True},
     )
+    usage_chunk: object | None = None
     async for chunk in stream:
+        if getattr(chunk, "usage", None) is not None:
+            usage_chunk = chunk  # usage-only final chunk; choices is empty
         delta = chunk.choices[0].delta.content if chunk.choices else None
         if delta:
             yield delta
+    if usage_chunk is not None:
+        await _meter(model, usage_chunk)
 
 
 async def structured_completion(
@@ -201,6 +226,7 @@ async def _parse_json_schema(
         if reasoning_effort is not None
         else omit,
     )
+    await _meter(model, completion)
     return response_format.model_validate_json(completion.choices[0].message.content or "")
 
 
@@ -234,6 +260,7 @@ async def _parse_prompt_json(
         if reasoning_effort is not None
         else omit,
     )
+    await _meter(model, completion)
     content = completion.choices[0].message.content or ""
     return response_format.model_validate_json(_strip_fences(content))
 

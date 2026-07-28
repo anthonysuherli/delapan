@@ -35,6 +35,7 @@ from delapan.core.config import get_config
 from delapan.core.exploration import run_exploration
 from delapan.core.knowledge_graph.builder import schedule_kg_update
 from delapan.core.memory.persist import resolve_and_persist
+from delapan.core.monitoring.metering_context import metering_scope
 from delapan.store import Store
 
 router = APIRouter(prefix="/api/projects/{project}/kbs/{kb}")
@@ -105,13 +106,17 @@ async def _events(ctx: TenantContext, store: Store, body: ExploreBody) -> AsyncI
         await queue.put({"phase": phase, "detail": None})
 
     async def run() -> None:
-        try:
-            result = await _run_and_persist(ctx, store, body, on_progress)
-            await queue.put({"phase": "completed", **result})
-        except Exception as exc:  # noqa: BLE001 — surface as a terminal SSE event
-            await queue.put({"phase": "error", "error": str(exc)})
-        finally:
-            await queue.put(None)
+        # Scope wraps the whole pipeline (and the KG task it spawns, which
+        # inherits this context) so the leaf clients' usage_events rows carry
+        # org/user/operation rather than nulls.
+        with metering_scope(org_id=ctx.org_id, user_id=ctx.user_id, operation="explore"):
+            try:
+                result = await _run_and_persist(ctx, store, body, on_progress)
+                await queue.put({"phase": "completed", **result})
+            except Exception as exc:  # noqa: BLE001 — surface as a terminal SSE event
+                await queue.put({"phase": "error", "error": str(exc)})
+            finally:
+                await queue.put(None)
 
     task = asyncio.create_task(run())
     try:

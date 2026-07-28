@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from openai import AsyncOpenAI
 
 from delapan.core.config import get_config, get_settings
+from delapan.core.monitoring.usage_recorder import record_usage
 
 _client: AsyncOpenAI | None = None
 
@@ -47,6 +48,7 @@ async def embed_text(text: str) -> list[float]:
         input=text[: emb.input_char_cap],  # safety cap on token count
         dimensions=emb.dim,  # pin output dim (gateway/Gemini default differs from the fixed column)
     )
+    await record_usage(model=emb.model, in_tokens=getattr(resp.usage, "prompt_tokens", 0) or 0)
     return resp.data[0].embedding
 
 
@@ -61,6 +63,7 @@ async def embed_batch(texts: Sequence[str]) -> list[list[float]]:
         input=[t[: emb.input_char_cap] for t in texts],
         dimensions=emb.dim,  # pin output dim (gateway/Gemini default differs from the fixed column)
     )
+    await record_usage(model=emb.model, in_tokens=getattr(resp.usage, "prompt_tokens", 0) or 0)
     # Preserve input order
     return [d.embedding for d in sorted(resp.data, key=lambda d: d.index)]
 
