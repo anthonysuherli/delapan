@@ -9,7 +9,7 @@ from delapan.mcp import server as srv
 
 
 class _Ctx:
-    org_id, project_id, kb_id, access_token = "o", "p", "kb1", None
+    user_id, org_id, project_id, kb_id, access_token = "u", "o", "p", "kb1", None
 
 
 class _Store:

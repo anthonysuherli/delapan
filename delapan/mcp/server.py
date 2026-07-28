@@ -45,6 +45,7 @@ from delapan.core.knowledge_graph.builder import _gather_findings, build_graph, 
 from delapan.core.knowledge_graph.schema import KGSchema, propose_schema, validate_schema
 from delapan.core.knowledge_graph.service import kg_schema_view
 from delapan.core.memory.persist import resolve_and_persist
+from delapan.core.monitoring.metering_context import metering_scope
 from delapan.store import active_backend, get_store
 
 from .banner import DELAPAN_BANNER
@@ -164,6 +165,15 @@ def _clear_archive(store, ctx) -> bool:
 
 
 async def _explore_impl(ctx: TenantContext, prompt: str | None, max_findings: int | None) -> dict:
+    """Attribute this run's LLM/search spend, then delegate. The leaf clients
+    meter every call themselves; this scope is what gives those rows an
+    org/user/operation instead of nulls. It wraps the whole body so the
+    background KG task, spawned inside, inherits the copied context too."""
+    with metering_scope(org_id=ctx.org_id, user_id=ctx.user_id, operation="explore"):
+        return await _explore_run(ctx, prompt, max_findings)
+
+
+async def _explore_run(ctx: TenantContext, prompt: str | None, max_findings: int | None) -> dict:
     missing = missing_pipeline_keys()
     if missing:
         names = " and ".join(missing)

@@ -16,6 +16,7 @@ from functools import lru_cache
 from typing import Any, Literal, cast
 
 from delapan.core.config import get_settings
+from delapan.core.monitoring.usage_recorder import record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,7 @@ async def search(query: str, *, max_results: int, search_depth: str) -> list[dic
         search_depth=cast(Literal["basic", "advanced"], search_depth),
         max_results=max_results,
     )
+    await record_usage(model="tavily", units=1)
     return resp.get("results", [])
 
 
@@ -104,6 +106,7 @@ async def _extract_batch(urls: list[str], extract_depth: str) -> dict[str, str]:
         extract_depth=cast(Literal["basic", "advanced"], extract_depth),
         format="markdown",
     )
+    await record_usage(model="tavily", units=1)
     out: dict[str, str] = {}
     for r in resp.get("results", []):
         url = r.get("url")

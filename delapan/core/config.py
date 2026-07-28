@@ -458,6 +458,41 @@ class ApiConfig(BaseModel):
     rate_limit_pipeline: str = "12/hour"  # explore/canvas POSTs (LLM + search spend)
 
 
+class ModelPrice(BaseModel):
+    """$ per 1M tokens for one model."""
+
+    input: float
+    output: float
+
+
+class MeteringConfig(BaseModel):
+    """Cost metering: $/1M-token price table + per-call Tavily costs.
+
+    Keys are gateway model slugs (dot form, e.g. 'anthropic/claude-sonnet-4.6')
+    matching what ai_gateway.py sends. Verify rates against current provider
+    pricing — they drift; unknown models cost 0.0 (flagged at report time)."""
+
+    price_table: dict[str, ModelPrice] = Field(
+        default_factory=lambda: {
+            # Anthropic (gateway, zero-markup pass-through at list rates)
+            "anthropic/claude-sonnet-4.6": ModelPrice(input=3.0, output=15.0),
+            "anthropic/claude-opus-4.8": ModelPrice(input=5.0, output=25.0),
+            "anthropic/claude-opus-4.1": ModelPrice(input=15.0, output=75.0),
+            "anthropic/claude-haiku-4.5": ModelPrice(input=1.0, output=5.0),
+            # Google Gemini (gateway)
+            "google/gemini-3.1-pro-preview": ModelPrice(input=1.25, output=5.0),
+            "google/gemini-3.5-flash": ModelPrice(input=0.3, output=2.5),
+            "google/gemini-2.5-flash": ModelPrice(input=0.3, output=2.5),
+            "google/gemini-embedding-001": ModelPrice(input=0.15, output=0.0),
+            # OpenAI (gateway or direct) — embeddings' output side is $0
+            "openai/gpt-5.4-mini": ModelPrice(input=0.75, output=4.5),
+            "text-embedding-3-small": ModelPrice(input=0.02, output=0.0),
+        }
+    )
+    tavily_search_usd: float = 0.008  # ~$8/1000 credits; advanced depth = 2 credits
+    tavily_extract_usd: float = 0.008
+
+
 class AppConfig(BaseModel):
     """Aggregate of all tunable sections."""
 
@@ -478,6 +513,7 @@ class AppConfig(BaseModel):
     curation: CurationConfig = Field(default_factory=CurationConfig)
     concepts: ConceptsConfig = Field(default_factory=ConceptsConfig)
     prompts: PromptsConfig = Field(default_factory=PromptsConfig)
+    metering: MeteringConfig = Field(default_factory=MeteringConfig)
 
 
 # -----------------------------------------------------------------------------
