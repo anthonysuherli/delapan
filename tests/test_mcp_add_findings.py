@@ -83,6 +83,19 @@ async def test_rejects_provenance_with_whitespace_url(ctx_and_store):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("bad_url", [None, False, 0])
+async def test_rejects_provenance_with_null_url(ctx_and_store, bad_url):
+    """{'url': None} (and other non-string falsy values) must not slip past
+    validation via str() coercion — str(None) == 'None' is truthy after strip()."""
+    ctx, store = ctx_and_store
+    bad = _raw("null url prov")
+    bad["provenance"] = [{"url": bad_url}]
+    out = await server_mod._add_findings_impl(ctx, [bad])
+    assert "error" in out
+    assert store.count_findings(ctx.kb_id) == 0
+
+
+@pytest.mark.asyncio
 async def test_rejects_non_list_provenance(ctx_and_store):
     ctx, store = ctx_and_store
     bad = _raw("non-list prov")

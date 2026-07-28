@@ -302,7 +302,8 @@ async def _add_findings_impl(ctx: TenantContext, findings: list[dict]) -> dict:
                 return {"error": f"finding[{i}] is missing required field {field!r}"}
         prov = raw.get("provenance")
         if not isinstance(prov, list) or not any(
-            isinstance(p, dict) and str(p.get("url", "")).strip() for p in prov
+            isinstance(p, dict) and isinstance(p.get("url"), str) and p["url"].strip()
+            for p in prov
         ):
             return {
                 "error": (
