@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from delapan.core.memory.models import ResolutionDecision, ResolutionOp
+from delapan.core.memory.models import ResolutionDecision, ResolutionOp, ResolutionOutcome
 from delapan.mcp import server as server_mod
 
 
@@ -27,7 +27,9 @@ def ctx_and_store(store, monkeypatch):
         return [[0.01] * 1536 for _ in texts]
 
     async def _all_add(store_, kb_, cands, embs, mcfg):
-        return [ResolutionDecision(candidate_index=i, op=ResolutionOp.ADD) for i in range(len(cands))]
+        return [
+            ResolutionDecision(candidate_index=i, op=ResolutionOp.ADD) for i in range(len(cands))
+        ]
 
     async def _no_synopsis(kb_id, org_id=None, store=None):
         return "skipped"
@@ -110,6 +112,109 @@ async def test_rejects_empty_batch(ctx_and_store):
     ctx, _store = ctx_and_store
     out = await server_mod._add_findings_impl(ctx, [])
     assert "error" in out
+
+
+@pytest.mark.asyncio
+async def test_rejects_when_no_embedding_credential(ctx_and_store, monkeypatch):
+    """Keyless install: a clean error before any store mutation, never a raw
+    MissingEmbeddingKeyError traceback surfacing from embed_batch deep in the
+    try block."""
+    ctx, store = ctx_and_store
+    monkeypatch.setattr(
+        server_mod,
+        "get_settings",
+        lambda: SimpleNamespace(ai_gateway_api_key=None, openai_api_key=None),
+    )
+    out = await server_mod._add_findings_impl(ctx, [_raw("keyless")])
+    assert "error" in out
+    assert store.count_findings(ctx.kb_id) == 0
+
+
+@pytest.mark.asyncio
+async def test_rejects_oversized_batch(ctx_and_store, monkeypatch):
+    """AI spend is bounded and observable by construction — the same cap explore
+    enforces applies to agent-submitted batches, so nothing gets embedded or
+    routed through the resolver before the check runs."""
+    ctx, store = ctx_and_store
+    monkeypatch.setenv("DLP_EXPLORATION__MAX_FINDINGS", "2")
+    from delapan.core.config import get_config
+
+    get_config.cache_clear()
+    try:
+        out = await server_mod._add_findings_impl(ctx, [_raw("a"), _raw("b"), _raw("c")])
+        assert "error" in out
+        assert "3" in out["error"]
+        assert "2" in out["error"]
+        assert store.count_findings(ctx.kb_id) == 0
+    finally:
+        get_config.cache_clear()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_confidence", ["high", None, [0.5], True])
+async def test_rejects_bad_confidence_type(ctx_and_store, bad_confidence):
+    ctx, store = ctx_and_store
+    bad = _raw("bad confidence type")
+    bad["confidence"] = bad_confidence
+    out = await server_mod._add_findings_impl(ctx, [bad])
+    assert "error" in out
+    assert "confidence" in out["error"]
+    assert store.count_findings(ctx.kb_id) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_confidence", [85, -0.1, 1.5])
+async def test_rejects_out_of_range_confidence(ctx_and_store, bad_confidence):
+    """confidence: 85 is the classic 0-100 vs 0-1 agent slip — it must not
+    persist and silently outrank every verified finding."""
+    ctx, store = ctx_and_store
+    bad = _raw("out of range confidence")
+    bad["confidence"] = bad_confidence
+    out = await server_mod._add_findings_impl(ctx, [bad])
+    assert "error" in out
+    assert "confidence" in out["error"]
+    assert store.count_findings(ctx.kb_id) == 0
+
+
+@pytest.mark.asyncio
+async def test_rejects_non_dict_content(ctx_and_store):
+    ctx, store = ctx_and_store
+    bad = _raw("non-dict content")
+    bad["content"] = "a string"
+    out = await server_mod._add_findings_impl(ctx, [bad])
+    assert "error" in out
+    assert "content" in out["error"]
+    assert store.count_findings(ctx.kb_id) == 0
+
+
+@pytest.mark.asyncio
+async def test_rejects_non_string_title(ctx_and_store):
+    ctx, store = ctx_and_store
+    bad = _raw("placeholder")
+    bad["title"] = 12345
+    out = await server_mod._add_findings_impl(ctx, [bad])
+    assert "error" in out
+    assert "title" in out["error"]
+    assert store.count_findings(ctx.kb_id) == 0
+
+
+@pytest.mark.asyncio
+async def test_all_duplicates_returns_note(ctx_and_store, monkeypatch):
+    """Every finding resolves as a duplicate — mirrors _explore_impl's peer
+    behavior so an agent doesn't resubmit against a bare count:0 and buy more
+    resolver calls."""
+    ctx, _store = ctx_and_store
+
+    async def _empty_outcome(ctx_, store_, candidates, cfg):
+        return ResolutionOutcome(affected_finding_ids=[])
+
+    monkeypatch.setattr(server_mod, "resolve_and_persist", _empty_outcome)
+    out = await server_mod._add_findings_impl(ctx, [_raw("dup")])
+    assert out["status"] == "completed"
+    assert out["count"] == 0
+    assert out["finding_ids"] == []
+    assert "note" in out
+    assert "duplicate" in out["note"]
 
 
 @pytest.mark.asyncio

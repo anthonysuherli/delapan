@@ -297,10 +297,49 @@ async def _add_findings_impl(ctx: TenantContext, findings: list[dict]) -> dict:
     if not findings:
         return {"error": "no findings supplied"}
 
+    settings = get_settings()
+    if not (settings.ai_gateway_api_key or settings.openai_api_key):
+        if active_backend() == "local":
+            return {
+                "error": "add_findings needs an embedding credential: set AI_GATEWAY_API_KEY "
+                "(or OPENAI_API_KEY) in the plugin root's .env (see .env.example) — resume "
+                "works without them."
+            }
+        return {
+            "error": "add_findings is unavailable: the server is missing AI_GATEWAY_API_KEY "
+            "(or OPENAI_API_KEY)."
+        }
+
+    cfg = get_config().exploration
+    if len(findings) > cfg.max_findings:
+        return {
+            "error": f"batch of {len(findings)} findings exceeds the cap of "
+            f"{cfg.max_findings} (exploration.max_findings) — split into smaller batches"
+        }
+
     for i, raw in enumerate(findings):
         for field in ("title", "content"):
             if not raw.get(field):
                 return {"error": f"finding[{i}] is missing required field {field!r}"}
+        if not isinstance(raw["title"], str):
+            return {
+                "error": f"finding[{i}] title must be a string, got {type(raw['title']).__name__}"
+            }
+        if not isinstance(raw["content"], dict):
+            return {
+                "error": f"finding[{i}] content must be a dict of structured fields, got "
+                f"{type(raw['content']).__name__}"
+            }
+        confidence = raw.get("confidence", 0.5)
+        if (
+            isinstance(confidence, bool)
+            or not isinstance(confidence, (int, float))
+            or not (0.0 <= confidence <= 1.0)
+        ):
+            return {
+                "error": f"finding[{i}] confidence must be a real number in [0, 1], got "
+                f"{confidence!r}"
+            }
         prov = raw.get("provenance")
         if not isinstance(prov, list) or not any(
             isinstance(p, dict) and isinstance(p.get("url"), str) and p["url"].strip()
@@ -326,11 +365,16 @@ async def _add_findings_impl(ctx: TenantContext, findings: list[dict]) -> dict:
         )
         syn_status = await maybe_rebuild_synopsis(ctx.kb_id, org_id=ctx.org_id, store=store)
         schedule_kg_update(ctx, ids, store=store)
-    except Exception:
-        store.update_exploration(exp_id, status="failed", completed_at=_now_iso())
+    except Exception as exc:
+        try:
+            store.update_exploration(
+                exp_id, status="failed", completed_at=_now_iso(), error=str(exc)
+            )
+        except Exception:  # noqa: BLE001, S110 — bookkeeping must never mask the original exc
+            pass
         raise
 
-    return {
+    out = {
         "exploration_id": exp_id,
         "status": "completed",
         "finding_ids": ids,
@@ -338,6 +382,9 @@ async def _add_findings_impl(ctx: TenantContext, findings: list[dict]) -> dict:
         "synopsis": syn_status,
         "unarchived": was_archived,
     }
+    if not ids:
+        out["note"] = "all findings resolved as duplicates of existing knowledge (no new rows)"
+    return out
 
 
 @mcp.tool()
@@ -383,7 +430,9 @@ async def delapan_add_findings(project: str, kb: str, findings: list[dict]) -> d
     ``entity_type``.
 
     Findings resolve against existing ones (ADD/UPDATE/NOOP/SUPERSEDE), so
-    re-submitting overlapping material refines rather than duplicates."""
+    re-submitting overlapping material refines rather than duplicates. Batches
+    larger than the exploration cap (``exploration.max_findings`` in config.yaml)
+    are rejected before anything is written."""
     try:
         ctx = resolve_tenant(project, kb, create=True)
     except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB

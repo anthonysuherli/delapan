@@ -92,7 +92,9 @@ exploration:
   extraction_model: google/gemini-3.1-pro-preview   # extracts findings from pages (cost/quality frontier, 1M ctx)
   extraction_fallback_model: google/gemini-3.5-flash  # cheap retry model on extraction failure (high volume)
   temperature: 0.0
-  reasoning_effort: high              # shared fallback; planner inherits it
+  reasoning_effort: high              # shared default; planner + extraction override it below, so
+                                       # today only the evaluator (reflection pass) inherits it —
+                                       # DLP_EXPLORATION__REASONING_EFFORT now controls just that
   # Planning decides query diversity — keep it expensive. There is a known defect
   # where explore collapses onto a single subtopic while coverage reads "rich",
   # and lowering planner effort risks worsening it.
