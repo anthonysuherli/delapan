@@ -1,6 +1,6 @@
 {
   "name": "delapan",
-  "description": "Agentic knowledge-base engine — ground answers in maintained findings, fill gaps from the web. Skills: /delapan:resume (tap KB → preamble + coverage resume card), /delapan:search (semantic recall over findings), /delapan:explore (gap-fill from the web), /delapan:backlog (curation backlog — gaps ranked by demand), /delapan:projects (cross-repo discovery), /delapan:model (switch engine LLM lineup by optimization profile). Backed by the delapan MCP server.",
+  "description": "Agentic knowledge-base engine — ground answers in maintained findings, fill gaps from the web. Skills: /delapan:resume (tap KB → preamble + coverage resume card), /delapan:search (semantic recall over findings), /delapan:explore (gap-fill from the web), /delapan:ingest (store agent findings, near-duplicates cost one resolution call), /delapan:backlog (curation backlog — gaps ranked by demand), /delapan:projects (cross-repo discovery), /delapan:model (switch engine LLM lineup by optimization profile). Backed by the delapan MCP server.",
   "version": "0.2.0",
   "author": {
     "name": "Anthony Suherli",
@@ -13,6 +13,7 @@
     "./skills/resume",
     "./skills/search",
     "./skills/explore",
+    "./skills/ingest",
     "./skills/backlog",
     "./skills/projects",
     "./skills/model"

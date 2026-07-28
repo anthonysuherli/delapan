@@ -91,9 +91,22 @@ WebFetch and then call the tool.
 
 ### Cost effect
 
-Only `embed_batch` inside `resolve_and_persist` reaches the gateway, at $0.15/1M input tokens —
-roughly **$0.002 per 70-finding run**, versus ~$7 for the three explores measured today. The
-reasoning is billed to the user's Claude Code subscription instead.
+**Corrected 2026-07-28 during implementation — the original claim here was wrong.** It stated that
+only `embed_batch` reaches the gateway, at roughly $0.002 per 70-finding run. That holds only for
+findings with no similar existing content.
+
+The actual behavior: `config.yaml` sets `memory.enabled: true`, and `resolve()`
+(`core/memory/resolver.py`) defaults every candidate to ADD but escalates to a
+`structured_completion` call on `anthropic/claude-sonnet-4.6` for any candidate with a neighbor
+above `neighbor_min_similarity` (0.6). Calls are batched at `max_candidates_per_pass` (25), so ~70
+overlapping findings cost roughly 3 resolution calls, not 70.
+
+So the honest characterization is: **no pipeline LLM call for genuinely novel findings (embedding
+only, ~$0.002); near-duplicates route through the resolution model — which is precisely what makes
+dedup work.** Either way this remains dramatically cheaper than `delapan_explore`, which runs
+planning, per-page extraction, and evaluation LLM calls throughout, plus deepen when invoked
+(~$7 for the three explores measured 2026-07-27). The agent's *research* reasoning is billed to the
+Claude Code subscription; only the resolver's dedup judgment stays on the gateway.
 
 ### Limits
 

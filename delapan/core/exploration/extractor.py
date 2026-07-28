@@ -48,7 +48,7 @@ async def extract_findings(
             user=truncated,
             temperature=cfg.temperature,
             fallback_model=cfg.extraction_fallback_model,
-            reasoning_effort=cfg.reasoning_effort,
+            reasoning_effort=cfg.extraction_reasoning_effort,
             # Findings carry free-form `content` dicts; strict json_schema would
             # force those empty, so instruct the schema in the prompt instead.
             use_json_schema=False,
