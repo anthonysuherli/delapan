@@ -15,7 +15,7 @@
 - **All commands run from `backend/`** (the delapan git repo). Use `.venv/bin/python` / `.venv/bin/pytest`.
 - **Never change the local stdio server's behavior.** Every existing `@mcp.tool()` wrapper in `server.py` must keep calling `resolve_tenant`/`resolve_store` exactly as today; `tests/test_mcp_smoke.py` must keep passing unmodified throughout.
 - **No new dependencies.** `mcp`, `supabase`, `uvicorn` are already in `pyproject.toml` (base + `[cloud]` extra); `AuthSettings`/`TokenVerifier`/`streamable-http` are already present in the installed `mcp` version.
-- **Supabase project host** comes from `Settings.supabase_url` (`SUPABASE_URL` env) at runtime — never hardcode the project ref (`gunqbyddzuwzpncfigro`) in `delapan/mcp/*` (it's already hardcoded once, intentionally, inside the migration script from the sibling plan — don't add a second hardcoded copy here).
+- **Supabase project host** comes from `Settings.supabase_url` (`SUPABASE_URL` env) at runtime — never hardcode the project ref (`<project-ref>`) in `delapan/mcp/*` (it's already hardcoded once, intentionally, inside the migration script from the sibling plan — don't add a second hardcoded copy here).
 - **`DELAPAN_BACKEND=cloud`** is a required deployment env var for the cloud server (set in `fly.toml`, not mutated by application code) — `cloud_server.main()` fails fast if it isn't set.
 - **The cloud server does not need `DLP_MCP_USER_EMAIL`/`DLP_MCP_USER_PASSWORD`.** Those exist only for `_login()`'s password grant, which the token-based path never calls.
 
@@ -669,7 +669,7 @@ Expected: `2 passed`
 
 ```bash
 CLOUD_SERVER_URL=https://example-cloud-server.fly.dev \
-SUPABASE_URL=https://gunqbyddzuwzpncfigro.supabase.co \
+SUPABASE_URL=https://<project-ref>.supabase.co \
 SUPABASE_ANON_KEY=<your anon key> \
 SUPABASE_SERVICE_ROLE_KEY=<your service role key> \
 DELAPAN_BACKEND=cloud \
@@ -684,7 +684,7 @@ curl -s http://127.0.0.1:8931/.well-known/oauth-protected-resource
 kill %1
 ```
 
-Expected: the first `curl` prints `HTTP/1.1 401 Unauthorized` with a `www-authenticate: Bearer error="invalid_token", ... resource_metadata="https://example-cloud-server.fly.dev/.well-known/oauth-protected-resource"` header; the second prints `{"resource":"https://example-cloud-server.fly.dev/","authorization_servers":["https://gunqbyddzuwzpncfigro.supabase.co/auth/v1"],"bearer_methods_supported":["header"]}`.
+Expected: the first `curl` prints `HTTP/1.1 401 Unauthorized` with a `www-authenticate: Bearer error="invalid_token", ... resource_metadata="https://example-cloud-server.fly.dev/.well-known/oauth-protected-resource"` header; the second prints `{"resource":"https://example-cloud-server.fly.dev/","authorization_servers":["https://<project-ref>.supabase.co/auth/v1"],"bearer_methods_supported":["header"]}`.
 
 - [ ] **Step 6: Commit**
 
@@ -788,7 +788,7 @@ Expected: creates the Fly app (adjust `fly.toml`'s `app`/`primary_region`/`CLOUD
 
 ```bash
 flyctl secrets set \
-  SUPABASE_URL=https://gunqbyddzuwzpncfigro.supabase.co \
+  SUPABASE_URL=https://<project-ref>.supabase.co \
   SUPABASE_ANON_KEY=<from backend/.env> \
   SUPABASE_SERVICE_ROLE_KEY=<from backend/.env> \
   ANTHROPIC_API_KEY=<from backend/.env, if set> \

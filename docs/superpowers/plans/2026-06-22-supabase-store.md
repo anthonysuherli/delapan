@@ -35,7 +35,7 @@ The whole user-JWT design assumes RLS is enabled with `org_id`-scoped policies t
 
 - [ ] **Step 1: Run the RLS posture query**
 
-In the Supabase SQL editor (https://supabase.com/dashboard/project/gunqbyddzuwzpncfigro/sql/new) — or via the Supabase MCP `execute_sql` if reconnected — run:
+In the Supabase SQL editor (https://supabase.com/dashboard/project/<project-ref>/sql/new) — or via the Supabase MCP `execute_sql` if reconnected — run:
 
 ```sql
 select relname, relrowsecurity, relforcerowsecurity
@@ -55,7 +55,7 @@ Expected: `relrowsecurity = true` for each table, and at least one `SELECT` poli
 ```sql
 select om.user_id, om.role
 from org_members om
-where om.org_id = '1a7d0aa5-587f-4420-985b-bafcf03bf04f';
+where om.org_id = '<org-uuid>';
 ```
 
 Expected: at least one member (the build's MCP user must become one of these, or be added — Task 8).
@@ -1374,7 +1374,7 @@ import sys
 from delapan.core.clients.supabase import service_client
 from delapan.core.config import get_settings
 
-ACTUARY_ORG = "1a7d0aa5-587f-4420-985b-bafcf03bf04f"
+ACTUARY_ORG = "<org-uuid>"
 
 
 def main() -> None:

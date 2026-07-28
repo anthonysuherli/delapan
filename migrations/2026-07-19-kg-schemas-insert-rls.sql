@@ -1,5 +1,5 @@
 -- kg_schemas: grant INSERT to authenticated org members.
--- Apply to the cloud project (gunqbyddzuwzpncfigro) so the KG-intent write seam
+-- Apply to the cloud project (<project-ref>) so the KG-intent write seam
 -- (SupabaseStore.set_kg_intent, reached via delapan_set_kg_schema and br8n's
 -- identical br8n_set_kg_schema) can persist a schema under a user JWT.
 --

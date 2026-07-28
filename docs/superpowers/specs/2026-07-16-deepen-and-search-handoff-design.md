@@ -1,6 +1,6 @@
 # Deepen wiring + two-phase agent search handoff — design spec
 
-*2026-07-16 · Status: approved design, pre-implementation · Line: delapan master · Portfolio item E5 from `delapan-ai/reports/2026-07-15-delapan-enhancement-brainstorm.md` · Every file:line below re-verified against `master` (the worktree currently sits on `feat/write-path-dedup`; cites were read via `git show master:<path>`). Cloud facts verified live against `gunqbyddzuwzpncfigro` on 2026-07-16.*
+*2026-07-16 · Status: approved design, pre-implementation · Line: delapan master · Portfolio item E5 from `delapan-ai/reports/2026-07-15-delapan-enhancement-brainstorm.md` · Every file:line below re-verified against `master` (the worktree currently sits on `feat/write-path-dedup`; cites were read via `git show master:<path>`). Cloud facts verified live against `<project-ref>` on 2026-07-16.*
 
 **PROBLEM:** `run_deepen` is wired to nothing, and a missing `TAVILY_API_KEY` makes explore return zero findings in silence. **SOLUTION:** consume the already-documented `search_mode` at the tool boundary — hand the search to the calling agent and resume through the `ingest_pages` seam — and expose deepen as a store-backed job with a status tool and an SSE route.
 
@@ -202,7 +202,7 @@ Both are constant defaults, which SQLite's `ALTER TABLE ADD COLUMN` permits (unl
 
 ```sql
 -- 00XX_explorations_handoff_and_jobs.sql
--- Verified live on gunqbyddzuwzpncfigro (2026-07-16): `explorations` ALREADY has
+-- Verified live on <project-ref> (2026-07-16): `explorations` ALREADY has
 -- `plan jsonb` (nullable) and its status CHECK ALREADY admits 'awaiting_ingest'.
 -- Both are dormant — no engine code references them. Only `kind`, `progress`,
 -- and the 'running' status are new. ids are uuid; finding_ids is uuid[] NOT NULL

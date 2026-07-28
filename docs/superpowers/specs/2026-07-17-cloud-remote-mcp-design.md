@@ -28,7 +28,7 @@ local stdio server.
 - `SupabaseStore`, `mcp/tenancy.py`'s cloud branch (GoTrue login, `org_id`
   resolution, RLS-scoped `get_store`) — merged to `master`.
 - The `actuary` project (4 KBs) is live on cloud Supabase, org
-  `1a7d0aa5-587f-4420-985b-bafcf03bf04f`, project `d3df020b-…`.
+  `<org-uuid>`, project `d3df020b-…`.
 - `scripts/port_actuary_to_cloud.py` — a proven local→cloud migration script
   (dry-run default, `--execute`, `--rollback <project_uuid>`), currently
   hardcoded to `PROJECT_NAME = "actuary"`.
@@ -141,7 +141,7 @@ claude.ai ──HTTPS/streamable-http──▶ delapan/mcp/cloud_server.py  (NEW
    hand-written endpoint.
 2. claude.ai fetches the protected-resource metadata (also SDK-served); it
    lists Supabase's issuer (`{SUPABASE_URL}/auth/v1`, e.g.
-   `https://gunqbyddzuwzpncfigro.supabase.co/auth/v1` — the actual project
+   `https://<project-ref>.supabase.co/auth/v1` — the actual project
    host from `.env`, **not** any internal delapan project UUID) as the
    authorization server.
 3. claude.ai discovers Supabase's OAuth metadata, dynamically registers

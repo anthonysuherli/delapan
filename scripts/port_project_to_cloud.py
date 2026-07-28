@@ -3,8 +3,9 @@
 
     ~/.delapan/delapan.db  ──(read + transform)──►  Supabase REST (PostgREST)
 
-Dry-run by default (no writes). Pass --execute to write. The Supabase secret
-key is read from env SUPABASE_SECRET_KEY (never hardcoded). On any write error,
+Dry-run by default (no writes). Pass --execute to write. Target and credentials
+come from env, never hardcoded: SUPABASE_URL (project), SUPABASE_SECRET_KEY
+(service key), DELAPAN_CLOUD_ORG_ID (destination org). On any write error,
 prints the new project_id so the partial insert can be rolled back with
 --rollback <project_uuid>.
 
@@ -32,8 +33,8 @@ import uuid as uuidlib
 import sqlite_vec
 
 DB = os.path.expanduser("~/.delapan/delapan.db")
-BASE = "https://gunqbyddzuwzpncfigro.supabase.co/rest/v1"
-ORG = "1a7d0aa5-587f-4420-985b-bafcf03bf04f"
+BASE = f"{os.environ.get('SUPABASE_URL', '').rstrip('/')}/rest/v1"
+ORG = os.environ.get("DELAPAN_CLOUD_ORG_ID", "")
 BATCH = 25
 
 
@@ -75,6 +76,10 @@ def _key() -> str:
     k = os.environ.get("SUPABASE_SECRET_KEY")
     if not k:
         sys.exit("set SUPABASE_SECRET_KEY env var")
+    if not os.environ.get("SUPABASE_URL"):
+        sys.exit("set SUPABASE_URL env var (target project)")
+    if not ORG:
+        sys.exit("set DELAPAN_CLOUD_ORG_ID env var (destination org uuid)")
     return k
 
 

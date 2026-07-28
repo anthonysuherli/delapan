@@ -63,12 +63,8 @@ create policy kg_communities_delete on public.kg_communities for delete to authe
   using (org_id in (select org_id from org_members where user_id = auth.uid()));
 
 -- ── 3. tracking_*: owner-only reads (was: any authenticated user) ────────────
+-- Revoke the blanket authenticated read here; the owner-side grant moved to
+-- 2026-07-28-operator-allowlist.sql, which gates these tables on a
+-- public.operators row instead of an email literal written into the policy.
 drop policy if exists tracking_initiatives_select_authenticated on public.tracking_initiatives;
-create policy tracking_initiatives_select_owner on public.tracking_initiatives
-  for select to authenticated
-  using ((select auth.uid()) = (select id from auth.users where email = 'anthonysuherli@gmail.com'));
-
 drop policy if exists tracking_backlog_select_authenticated on public.tracking_backlog;
-create policy tracking_backlog_select_owner on public.tracking_backlog
-  for select to authenticated
-  using ((select auth.uid()) = (select id from auth.users where email = 'anthonysuherli@gmail.com'));

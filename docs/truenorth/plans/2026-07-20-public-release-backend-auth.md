@@ -425,10 +425,10 @@ create policy "beta members read own row"
   using ((select auth.uid()) = user_id);
 ```
 
-- [ ] **Step 2: Apply to the cloud project** — via the Supabase MCP `apply_migration` tool (project `gunqbyddzuwzpncfigro`) or `psql "$DATABASE_URL" -f migrations/2026-07-20-beta-members.sql`.
+- [ ] **Step 2: Apply to the cloud project** — via the Supabase MCP `apply_migration` tool (project `<project-ref>`) or `psql "$DATABASE_URL" -f migrations/2026-07-20-beta-members.sql`.
 
 - [ ] **Step 3: Verify** — `psql "$DATABASE_URL" -c "select relrowsecurity from pg_class where relname='beta_members';"` — Expected: `t`. Then insert your own user id as the first member:
-`psql "$DATABASE_URL" -c "insert into public.beta_members (user_id, note) select id, 'founder' from auth.users where email='anthonysuherli@gmail.com' on conflict do nothing;"`
+`psql "$DATABASE_URL" -c "insert into public.beta_members (user_id, note) select id, 'founder' from auth.users where email='<your-address>' on conflict do nothing;"`
 
 - [ ] **Step 4: Commit**
 

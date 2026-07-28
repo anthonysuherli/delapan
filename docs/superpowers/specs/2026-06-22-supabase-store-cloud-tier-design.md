@@ -22,7 +22,7 @@ RLS** doing org isolation.
 
 ## 2. Background — what exists vs what's missing
 
-**Already done (verified against the live instance `gunqbyddzuwzpncfigro`):**
+**Already done (verified against the live instance `<project-ref>`):**
 - The cloud Postgres schema is deployed: `projects, kbs, findings, kg_nodes,
   kg_edges, kb_synopsis, explorations, kg_schemas, orgs, org_members`, plus
   cloud-only tables (`access_*`, `api_keys`, `chat_*`, `kg_communities`, …).
@@ -31,7 +31,7 @@ RLS** doing org isolation.
 - Embeddings are **inline `vector(1536)` columns** on `findings`/`kg_nodes` —
   there are **no `vec_*` tables** in cloud (those are SQLite-only).
 - The `actuary` project (4 KBs, 160 findings, 264 nodes, 259 edges, embeddings)
-  is ported under org `1a7d0aa5-587f-4420-985b-bafcf03bf04f` (which has 2 owner
+  is ported under org `<org-uuid>` (which has 2 owner
   members). New cloud project id `d3df020b-5085-41c0-a561-490a202baa23`.
 - `tenancy.py`'s cloud branch already does GoTrue login (`_login`) + org lookup
   (`_org_for`) and calls `get_store(token, org_id)`.

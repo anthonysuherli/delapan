@@ -16,7 +16,7 @@
 - **`SUPABASE_SECRET_KEY`** env var must be set (service-role secret) before running the script for real — never hardcode it, never commit it. It is separate from `SUPABASE_SERVICE_ROLE_KEY` used elsewhere in the app; the script reads its own env var by design (see its `_key()` function) — don't conflate the two.
 - **Dry-run is the default.** Every real run of the script must be dry-run first, `--execute` second — this behavior must not change.
 - **Local ids are 32-char hex** (`uuid.uuid4().hex`); cloud requires canonical dashed UUIDs. The existing `dash()` transform handles this — do not change it.
-- **`ORG = "1a7d0aa5-587f-4420-985b-bafcf03bf04f"`** stays a module constant — every project ported by this script belongs to the same owner/org, matching how `actuary` was ported.
+- **`ORG = "<org-uuid>"`** stays a module constant — every project ported by this script belongs to the same owner/org, matching how `actuary` was ported.
 - **Local db path:** `~/.delapan/delapan.db` (the module-level `DB` constant, read only by `main()`, not by `build()`).
 
 ---
@@ -157,8 +157,8 @@ import uuid as uuidlib
 import sqlite_vec
 
 DB = os.path.expanduser("~/.delapan/delapan.db")
-BASE = "https://gunqbyddzuwzpncfigro.supabase.co/rest/v1"
-ORG = "1a7d0aa5-587f-4420-985b-bafcf03bf04f"
+BASE = "https://<project-ref>.supabase.co/rest/v1"
+ORG = "<org-uuid>"
 BATCH = 25
 
 
@@ -423,7 +423,7 @@ Run: `SUPABASE_SECRET_KEY=<your key> .venv/bin/python scripts/port_project_to_cl
 Expected output shape:
 ```
 === DRY-RUN: demo → cloud ===
-project <uuid>  org 1a7d0aa5-587f-4420-985b-bafcf03bf04f
+project <uuid>  org <org-uuid>
   kb main            <uuid>  f=28 n=0 e=0
 totals: findings=28 (emb 28)  nodes=0 (emb 0)  edges=0
 refs: grounded_in→missing-finding=0  edge→missing-node=0

@@ -3,25 +3,27 @@
     .venv/bin/python scripts/seed_dev.py [--org <uuid>]
 
 Idempotent. Uses the service-role client (admin). Reads the MCP user creds from
-settings (DLP_MCP_USER_EMAIL / DLP_MCP_USER_PASSWORD). Default org is the ported
-actuary org. Prints the resolved user_id.
+settings (DLP_MCP_USER_EMAIL / DLP_MCP_USER_PASSWORD). The org comes from --org
+or DELAPAN_CLOUD_ORG_ID — never a hardcoded tenant id. Prints the resolved
+user_id.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from delapan.core.clients.supabase import service_client
 from delapan.core.config import get_settings
 
-ACTUARY_ORG = "1a7d0aa5-587f-4420-985b-bafcf03bf04f"
-
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--org", default=ACTUARY_ORG)
+    ap.add_argument("--org", default=os.environ.get("DELAPAN_CLOUD_ORG_ID", ""))
     args = ap.parse_args()
+    if not args.org:
+        sys.exit("pass --org <uuid> or set DELAPAN_CLOUD_ORG_ID")
     s = get_settings()
     sb = service_client()
 

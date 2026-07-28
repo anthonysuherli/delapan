@@ -1,6 +1,6 @@
 # Lazy KG scaffold + findings-as-nodes PPR reranking — design spec
 
-*2026-07-16 · Status: approved design, pre-implementation · Line: master · Portfolio item E7 from `delapan-ai/reports/2026-07-15-delapan-enhancement-brainstorm.md` · Adversarially verified against the codebase and the live cloud catalog (`gunqbyddzuwzpncfigro`); 10 findings folded in.*
+*2026-07-16 · Status: approved design, pre-implementation · Line: master · Portfolio item E7 from `delapan-ai/reports/2026-07-15-delapan-enhancement-brainstorm.md` · Adversarially verified against the codebase and the live cloud catalog (`<project-ref>`); 10 findings folded in.*
 
 **PROBLEM:** the KG is gated behind an expensive eager LLM pass that only intent-schema KBs ever get (`builder.py:233-234`), and once built it never helps retrieval. **SOLUTION:** a cheap pure-python NLP scaffold written at ingest for every KB, LLM extraction deferred to view time and cached by contributing-finding-set hash, plus an opt-in Personalized-PageRank reranker that reorders the vector candidate pool over that scaffold.
 

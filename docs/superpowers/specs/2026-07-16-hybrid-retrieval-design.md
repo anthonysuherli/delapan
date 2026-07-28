@@ -1,6 +1,6 @@
 # Hybrid retrieval: contextual embeddings, BM25+RRF fusion in-store, pluggable rerank
 
-*2026-07-16 · Status: approved design, pre-implementation · Line: master (via `feat/write-path-dedup`) · Portfolio item E3 from `delapan-ai/reports/2026-07-15-delapan-enhancement-brainstorm.md` · Adversarially verified against the codebase and the live cloud instance `gunqbyddzuwzpncfigro`; all findings folded in.*
+*2026-07-16 · Status: approved design, pre-implementation · Line: master (via `feat/write-path-dedup`) · Portfolio item E3 from `delapan-ai/reports/2026-07-15-delapan-enhancement-brainstorm.md` · Adversarially verified against the codebase and the live cloud instance `<project-ref>`; all findings folded in.*
 
 ## Problem
 

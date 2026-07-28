@@ -4,7 +4,7 @@
 --
 -- Both apply-time TODOs (RLS policies for resolution_events; the amended
 -- match_findings RPC) were filled in 2026-07-16 from live dumps against project
--- gunqbyddzuwzpncfigro, immediately before applying this migration to that project.
+-- <project-ref>, immediately before applying this migration to that project.
 
 -- valid_from: add WITHOUT a default first — Postgres backfills a column default
 -- into every existing row at ALTER time, which would clobber the created_at seed.

@@ -73,7 +73,7 @@ One SPA, one engine process, one auth authority.
 - **Fly.io** keeps the single existing app; the FastAPI REST `/api` is
   mounted alongside the cloud MCP server in the same ASGI process (one
   deploy). Considered, deferred: a second Fly app for the REST tier.
-- **Supabase** (`gunqbyddzuwzpncfigro`) is the auth authority + cloud store.
+- **Supabase** (`<project-ref>`) is the auth authority + cloud store.
 - **Local tier untouched:** same `/api` contract served auth-less on
   loopback; no local workflow requires an account (invariant).
 

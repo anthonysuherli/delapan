@@ -1,6 +1,6 @@
 # Gap-driven curation flywheel: persist coverage verdicts → ranked backlog → explicit consume
 
-*2026-07-16 · Status: approved design, pre-implementation · Line: master · Portfolio item E4 from `delapan-ai/reports/2026-07-15-delapan-enhancement-brainstorm.md` · Adversarially verified against the codebase and the live cloud instance `gunqbyddzuwzpncfigro`; every verification finding folded in.*
+*2026-07-16 · Status: approved design, pre-implementation · Line: master · Portfolio item E4 from `delapan-ai/reports/2026-07-15-delapan-enhancement-brainstorm.md` · Adversarially verified against the codebase and the live cloud instance `<project-ref>`; every verification finding folded in.*
 
 **PROBLEM:** every coverage verdict the engine computes is thrown away, and the one seam built to keep it (`Store.record_access`) has zero call sites and is broken on the tier it was written for. **SOLUTION:** persist each verdict as an access event, aggregate gap/sparse queries into a recurrence-ranked backlog of curation topics, and let a promptless `delapan_explore` explicitly consume the top topic.
 
