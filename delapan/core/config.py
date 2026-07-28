@@ -272,8 +272,13 @@ class ExplorationConfig(BaseModel):
     extraction_model: str = "anthropic/claude-sonnet-4.6"
     extraction_fallback_model: str = "openai/gpt-5.4-mini"
     temperature: float = 0.0
-    # Gateway/Gemini thinking level for planning + extraction; None = provider default.
+    # Gateway/Gemini thinking level; None = provider default.
+    # `reasoning_effort` is the shared fallback; the per-stage knobs below let the
+    # planner stay expensive (it decides query diversity) while the high-volume
+    # page extractor runs cheaper. Thinking tokens bill as full-price output.
     reasoning_effort: str | None = None  # "low" | "medium" | "high"
+    planner_reasoning_effort: str | None = None
+    extraction_reasoning_effort: str | None = None
 
     # Web-search backend selection:
     #   auto   — Tavily if TAVILY_API_KEY is set, else hand the search to the
@@ -288,6 +293,16 @@ class ExplorationConfig(BaseModel):
         if v not in {"auto", "agent", "tavily"}:
             raise ValueError(f"search_mode must be auto|agent|tavily, got {v!r}")
         return v
+
+    @model_validator(mode="after")
+    def _default_stage_effort(self) -> ExplorationConfig:
+        # Unset stage knobs inherit the shared value, so introducing the split is
+        # a no-op until a stage is explicitly overridden in config.yaml.
+        if self.planner_reasoning_effort is None:
+            self.planner_reasoning_effort = self.reasoning_effort
+        if self.extraction_reasoning_effort is None:
+            self.extraction_reasoning_effort = self.reasoning_effort
+        return self
 
     # Search (Tavily)
     search_depth: str = "advanced"  # "basic" | "advanced"
