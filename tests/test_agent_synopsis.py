@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from delapan.core.agent import synopsis as syn
@@ -56,6 +58,17 @@ async def test_direct_slug_without_anthropic_key_raises_actionable(monkeypatch):
         await synopsis_mod._build([{"title": "A"}], SynopsisConfig(model="claude-haiku-4-5"))
     assert "ANTHROPIC_API_KEY" in str(exc_info.value)
     get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("fn_name", ["maybe_rebuild_synopsis", "schedule_rebuild"])
+def test_store_is_required_no_bare_get_store_fallback(fn_name):
+    """`store` must stay required. A default would resurrect the `store or
+    get_store()` fallback, and on the cloud tier a bare `get_store()` builds a
+    SupabaseStore with no bearer token — postgrest then raises on first use.
+    This module has no TenantContext to build a credentialed Store from."""
+    param = inspect.signature(getattr(synopsis_mod, fn_name)).parameters["store"]
+    assert param.default is inspect.Parameter.empty
+    assert "get_store" not in dir(synopsis_mod)
 
 
 async def test_maybe_rebuild_returns_status_strings(store, monkeypatch):

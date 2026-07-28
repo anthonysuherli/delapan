@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from delapan.core.clients.ai_gateway import text_completion
 from delapan.core.clients.anthropic import chat_model, text_of
 from delapan.core.config import SynopsisConfig, get_config, get_settings
-from delapan.store import Store, get_store
+from delapan.store import Store
 
 logger = logging.getLogger(__name__)
 
@@ -90,17 +90,20 @@ async def _build(findings: list[dict], cfg: SynopsisConfig) -> list[dict]:
         return []
 
 
-async def maybe_rebuild_synopsis(
-    kb_id: str, *, org_id: str | None = None, store: Store | None = None
-) -> str:
+async def maybe_rebuild_synopsis(kb_id: str, *, store: Store, org_id: str | None = None) -> str:
     """Rebuild the synopsis if the KB grew enough. Never raises.
 
     Returns ``"rebuilt"``, ``"skipped"`` (thresholds not met), or
     ``"failed: <msg>"`` — callers surface the string so a broken rebuild is
-    visible instead of silent. `org_id` is accepted for signature parity."""
+    visible instead of silent. `org_id` is accepted for signature parity.
+
+    `store` is required, with no `get_store()` fallback: this module has no
+    `TenantContext` to source credentials from (unlike `knowledge_graph.builder`),
+    so a fallback could only build a bare `get_store()` — which on the cloud tier
+    is a `SupabaseStore` with no bearer token, and postgrest raises on first use.
+    Every caller already owns a tenant-scoped Store; make them pass it."""
     try:
         cfg = get_config().synopsis
-        store = store or get_store()
         live_count = store.count_findings(kb_id)
         row = store.load_synopsis(kb_id)
         if not should_rebuild(live_count, row, cfg):
@@ -119,11 +122,12 @@ async def maybe_rebuild_synopsis(
 _BG_TASKS: set[asyncio.Task] = set()
 
 
-def schedule_rebuild(kb_id: str, *, org_id: str | None = None, store: Store | None = None) -> None:
+def schedule_rebuild(kb_id: str, *, store: Store, org_id: str | None = None) -> None:
     """Fire-and-forget synopsis regen that won't be GC'd mid-flight.
 
     Holds a strong ref in a module-level set until the task finishes (CPython's
-    event loop only weak-refs tasks, so an unreferenced create_task can vanish)."""
+    event loop only weak-refs tasks, so an unreferenced create_task can vanish).
+    `store` is required for the reason given on `maybe_rebuild_synopsis`."""
     task = asyncio.create_task(maybe_rebuild_synopsis(kb_id, org_id=org_id, store=store))
     _BG_TASKS.add(task)
     task.add_done_callback(_BG_TASKS.discard)
