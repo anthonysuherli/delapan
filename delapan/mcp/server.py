@@ -300,11 +300,14 @@ async def _add_findings_impl(ctx: TenantContext, findings: list[dict]) -> dict:
         for field in ("title", "content"):
             if not raw.get(field):
                 return {"error": f"finding[{i}] is missing required field {field!r}"}
-        if not raw.get("provenance"):
+        prov = raw.get("provenance")
+        if not isinstance(prov, list) or not any(
+            isinstance(p, dict) and str(p.get("url", "")).strip() for p in prov
+        ):
             return {
                 "error": (
-                    f"finding[{i}] has no provenance — every finding must cite at least "
-                    "one source url, e.g. provenance=[{'url': 'https://…'}]"
+                    f"finding[{i}] has no provenance with a non-empty url — every finding "
+                    "must cite at least one source url, e.g. provenance=[{'url': 'https://…'}]"
                 )
             }
 

@@ -62,6 +62,37 @@ async def test_rejects_empty_provenance_list(ctx_and_store):
 
 
 @pytest.mark.asyncio
+async def test_rejects_provenance_with_empty_dict(ctx_and_store):
+    """[{}] is non-empty as a list but carries no url — must not slip past validation."""
+    ctx, store = ctx_and_store
+    bad = _raw("empty dict prov")
+    bad["provenance"] = [{}]
+    out = await server_mod._add_findings_impl(ctx, [bad])
+    assert "error" in out
+    assert store.count_findings(ctx.kb_id) == 0
+
+
+@pytest.mark.asyncio
+async def test_rejects_provenance_with_whitespace_url(ctx_and_store):
+    ctx, store = ctx_and_store
+    bad = _raw("whitespace url prov")
+    bad["provenance"] = [{"url": "   "}]
+    out = await server_mod._add_findings_impl(ctx, [bad])
+    assert "error" in out
+    assert store.count_findings(ctx.kb_id) == 0
+
+
+@pytest.mark.asyncio
+async def test_rejects_non_list_provenance(ctx_and_store):
+    ctx, store = ctx_and_store
+    bad = _raw("non-list prov")
+    bad["provenance"] = "https://example.com/a"
+    out = await server_mod._add_findings_impl(ctx, [bad])
+    assert "error" in out
+    assert store.count_findings(ctx.kb_id) == 0
+
+
+@pytest.mark.asyncio
 async def test_rejects_empty_batch(ctx_and_store):
     ctx, _store = ctx_and_store
     out = await server_mod._add_findings_impl(ctx, [])
