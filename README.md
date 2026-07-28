@@ -12,7 +12,7 @@ own storage via a small `Store` protocol. It ships as an MCP server, so any MCP 
 
 Requires [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`).
 
-    claude plugin marketplace add anthonysuherli/delapan-be
+    claude plugin marketplace add anthonysuherli/delapan
     claude plugin install delapan@delapan
 
 First launch materializes the Python environment (via uv) and seeds a bundled
