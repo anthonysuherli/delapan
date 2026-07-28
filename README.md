@@ -23,7 +23,7 @@ kb `demo`). To unlock semantic search and web research on your own repos, copy
 (plus `TAVILY_API_KEY` for `/delapan:explore`).
 
 Skills: `/delapan:resume`, `/delapan:search`, `/delapan:explore`,
-`/delapan:backlog`, `/delapan:projects`, `/delapan:model`.
+`/delapan:ingest`, `/delapan:backlog`, `/delapan:projects`, `/delapan:model`.
 
 ## Quickstart — local, no credentials
 
@@ -77,7 +77,7 @@ The local tier stores everything in `~/.delapan/delapan.db` (override with
 | **Pluggable storage** — `Store` protocol; ships SQLite, plus a Supabase/pgvector backend | `store/` |
 | **MCP server** | `mcp/` |
 | **Plugin launcher** — uv-run wrapper; materializes the environment on first run and starts the MCP server | `scripts/mcp-server.sh` |
-| **Claude Code skills** — six skills backing the `/delapan:*` slash commands (resume, search, explore, backlog, projects, model) | `skills/` |
+| **Claude Code skills** — seven skills backing the `/delapan:*` slash commands (resume, search, explore, ingest, backlog, projects, model) | `skills/` |
 | **Bundled demo KB** — seeded on first local server start so `/delapan:projects` + `/delapan:resume` work with zero keys | `data/demo.db` |
 | **First-run onboarding** — KB-not-found guidance card + demo-KB seeding | `delapan/mcp/onboarding.py` |
 | **Public `/api` auth** — config-forked bearer auth (Supabase JWT) + beta gate for the hosted tier; `auth: none` keeps the local tier byte-identical | `delapan/api/auth.py` |
@@ -174,7 +174,7 @@ pytest && ruff check .
   (`auth: none` default).
 
 - **Eval pipeline** — v1 ablation harness landed (spec: docs/truenorth/specs/2026-07-26-context-eval-pipeline-design.md); phase 2: LongMemEval adapter for externally comparable numbers.
-- **Claude Code plugin shell** — shipped in-repo, marketplace-installable (2026-07-26): `scripts/mcp-server.sh` (uv-run launcher), six skills under `skills/` backing the `/delapan:*` slash commands, a bundled demo KB (`data/demo.db`, project `delapan`/kb `demo`) seeded on first local start, and first-run onboarding (`delapan/mcp/onboarding.py`). Zero-key surface is `/delapan:projects` + `/delapan:resume` against the demo; `AI_GATEWAY_API_KEY` (plus `TAVILY_API_KEY`) unlocks search/explore on real repos.
+- **Claude Code plugin shell** — shipped in-repo, marketplace-installable (2026-07-26): `scripts/mcp-server.sh` (uv-run launcher), seven skills under `skills/` backing the `/delapan:*` slash commands, a bundled demo KB (`data/demo.db`, project `delapan`/kb `demo`) seeded on first local start, and first-run onboarding (`delapan/mcp/onboarding.py`). Zero-key surface is `/delapan:projects` + `/delapan:resume` against the demo; `AI_GATEWAY_API_KEY` (plus `TAVILY_API_KEY`) unlocks search/explore on real repos.
 
 **Next:**
 - Public release phases 2–3: frontend auth screens, `/app` guard + waitlist gate, landing/legal

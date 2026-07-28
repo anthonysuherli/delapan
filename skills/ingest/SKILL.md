@@ -1,12 +1,15 @@
 ---
 name: ingest
-description: Research a topic using your own web search and reading, then persist the findings to the KB via delapan_add_findings. Use INSTEAD of /delapan:explore when you can search the web yourself — it costs no pipeline LLM spend. Falls back to /delapan:explore for unattended or deployed runs.
+description: Research a topic using your own web search and reading, then persist the findings to the KB via delapan_add_findings. Use INSTEAD of /delapan:explore when you can search the web yourself — novel findings cost no LLM call, only near-duplicates do. Falls back to /delapan:explore for unattended or deployed runs.
 ---
 
 # Delapan Ingest (agent-driven)
 
-Research with your own tools; delapan only stores and dedupes. No pipeline LLM
-call is made, so this is roughly 1/1000th the gateway cost of `delapan_explore`.
+Research with your own tools; delapan only stores and dedupes. Genuinely novel
+findings cost no LLM call (embedding only); near-duplicates route through a
+resolution call to merge/refine them. Either way it's dramatically cheaper than
+`delapan_explore`, which runs planning, per-page extraction, and evaluation LLM
+calls throughout.
 
 ## When to use
 

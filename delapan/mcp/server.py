@@ -288,8 +288,9 @@ def _finding_from_raw(ctx: TenantContext, exp_id: str, raw: dict) -> Finding:
 
 
 async def _add_findings_impl(ctx: TenantContext, findings: list[dict]) -> dict:
-    """Persist agent-extracted findings. No LLM call — the calling agent already
-    did the reasoning; only embedding reaches the gateway.
+    """Persist agent-extracted findings. The calling agent already did the
+    research; genuinely novel findings only reach the gateway for embedding —
+    near-duplicates route through a resolution LLM call to merge/refine/supersede.
 
     Every finding must carry non-empty ``provenance``: grounding is a
     precondition here rather than a convention callers must remember."""
@@ -368,8 +369,9 @@ async def delapan_explore(
 async def delapan_add_findings(project: str, kb: str, findings: list[dict]) -> dict:
     """Persist findings you researched yourself into the named KB (creating the
     project/KB on demand). Use this instead of ``delapan_explore`` when you have
-    already searched and read the sources with your own tools — it runs no LLM
-    call of its own, so it is far cheaper and returns immediately.
+    already searched and read the sources with your own tools — novel findings
+    cost no LLM call of their own (only near-duplicates route through the
+    resolution model), so it is far cheaper and returns immediately.
 
     Each item in ``findings`` requires:
       ``title``       short claim-shaped headline
