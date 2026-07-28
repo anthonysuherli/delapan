@@ -1,4 +1,4 @@
-"""Every evals entry point must build its Store from the resolved tenant's creds.
+"""Code acting for a resolved tenant must build its Store from that tenant's creds.
 
 `resolve_tenant` returns a ctx carrying `access_token` + `org_id`; the store must
 then be built as `get_store(ctx.access_token, org_id=ctx.org_id)`. A bare
@@ -9,6 +9,10 @@ but on cloud it reaches `SupabaseStore(None, org_id=None)` and postgrest raises
 `get_store` is imported inside the function body in build.py/runner.py and at
 module level in the adapters, so the behavioural tests patch
 ``delapan.store.get_store`` (the shared origin) and the sweep covers the rest.
+
+The two behavioural tests are evals-specific; the AST sweep below is repo-wide
+(``evals/`` + ``delapan/``) — the same bug surfaced in
+``delapan/core/agent/synopsis.py``, so guarding only evals/ would miss its peers.
 """
 
 from __future__ import annotations
@@ -21,7 +25,18 @@ import pytest
 
 from delapan.core.agent.state import TenantContext
 
-EVALS_DIR = Path(__file__).parent.parent / "evals"
+REPO_ROOT = Path(__file__).parent.parent
+EVALS_DIR = REPO_ROOT / "evals"
+
+# Trees whose modules act on behalf of a resolved tenant. `scripts/` is out: its
+# entry points deliberately ternary on `if ctx.access_token else get_store()`,
+# and `tests/` is out because the suite runs on the local backend by design.
+SWEPT_ROOTS = ("evals", "delapan")
+
+# `delapan/mcp/tenancy.py` is the local/cloud fork itself: its bare calls sit
+# inside `if active_backend() == "local":`, the one branch where dropping
+# token/org is correct (SQLiteStore accepts neither). Exempt, not broken.
+SWEEP_EXEMPT = frozenset({"delapan/mcp/tenancy.py"})
 
 CTX = TenantContext(
     user_id="user-1",
@@ -133,14 +148,20 @@ def _awaited(value):
     return _coro()
 
 
-def test_no_bare_get_store_in_evals():
-    """Sweep every evals/ module: `get_store()` must never be called with no args.
+@pytest.mark.parametrize("root", SWEPT_ROOTS)
+def test_no_bare_get_store(root):
+    """Sweep `root`: `get_store()` must never be called with no args.
 
-    Catches the adapters (which import get_store at module level) and any future
-    entry point that resolves a tenant and then drops its credentials.
+    Catches the evals adapters (which import get_store at module level) and any
+    future entry point that resolves a tenant and then drops its credentials —
+    including the dormant kind, where every current caller happens to pass a
+    store so the unauthenticated branch is never taken in production.
     """
     offenders: list[str] = []
-    for path in sorted(EVALS_DIR.rglob("*.py")):
+    for path in sorted((REPO_ROOT / root).rglob("*.py")):
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        if rel in SWEEP_EXEMPT:
+            continue
         tree = ast.parse(path.read_text(), filename=str(path))
         for node in ast.walk(tree):
             if (
@@ -150,10 +171,17 @@ def test_no_bare_get_store_in_evals():
                 and not node.args
                 and not node.keywords
             ):
-                rel = path.relative_to(EVALS_DIR.parent)
                 offenders.append(f"{rel}:{node.lineno}")
 
     assert not offenders, (
-        "bare get_store() in evals/ — pass the resolved tenant's creds "
-        f"(get_store(ctx.access_token, org_id=ctx.org_id)): {offenders}"
+        f"bare get_store() in {root}/ — pass the resolved tenant's creds "
+        f"(get_store(ctx.access_token, org_id=ctx.org_id)), or require an explicit "
+        f"store from the caller if there is no ctx to source them from: {offenders}"
     )
+
+
+def test_sweep_exemptions_still_exist():
+    """A renamed/deleted exempt file would silently void its exemption, leaving
+    the sweep quietly narrower than it reads."""
+    missing = [rel for rel in SWEEP_EXEMPT if not (REPO_ROOT / rel).is_file()]
+    assert not missing, f"SWEEP_EXEMPT names files that no longer exist: {missing}"
