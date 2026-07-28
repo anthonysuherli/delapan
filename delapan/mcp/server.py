@@ -4,11 +4,12 @@
 
 A third entry path alongside the (cloud-only) HTTP API; it drains the same engine
 through the Store seam, so one engine serves both tiers. The surface is
-deliberately small — ten tools:
+deliberately small — eleven tools:
 
     delapan_resume            — inject KB context (banner + preamble + coverage)
     delapan_search            — semantic search over existing findings
     delapan_explore           — run the research pipeline + persist findings
+    delapan_add_findings      — persist agent-extracted findings, no LLM call
     delapan_backlog           — ranked gap/sparse queries awaiting research
     delapan_projects          — list the caller's projects/KBs
     delapan_archive           — archive/unarchive a project or KB (reversible)
@@ -41,6 +42,7 @@ from delapan.core.config import get_config, get_settings, missing_pipeline_keys
 from delapan.core.curation.backlog import rank_backlog
 from delapan.core.curation.recorder import schedule_record
 from delapan.core.exploration import run_exploration
+from delapan.core.exploration.models import Finding
 from delapan.core.knowledge_graph.builder import _gather_findings, build_graph, schedule_kg_update
 from delapan.core.knowledge_graph.schema import KGSchema, propose_schema, validate_schema
 from delapan.core.knowledge_graph.service import kg_schema_view
@@ -268,6 +270,71 @@ async def _explore_impl(ctx: TenantContext, prompt: str | None, max_findings: in
     return out
 
 
+def _finding_from_raw(ctx: TenantContext, exp_id: str, raw: dict) -> Finding:
+    """Build a Finding from an agent-supplied dict. Caller has already validated
+    provenance, so this stays a pure shape adapter."""
+    return Finding(
+        exploration_id=exp_id,
+        project_id=ctx.project_id,
+        category=raw.get("category") or "fact",
+        title=raw["title"],
+        content=raw["content"],
+        provenance=raw["provenance"],
+        confidence=float(raw.get("confidence", 0.5)),
+        tags=raw.get("tags") or [],
+        entity_type=raw.get("entity_type"),
+        extraction_model="agent",
+    )
+
+
+async def _add_findings_impl(ctx: TenantContext, findings: list[dict]) -> dict:
+    """Persist agent-extracted findings. No LLM call — the calling agent already
+    did the reasoning; only embedding reaches the gateway.
+
+    Every finding must carry non-empty ``provenance``: grounding is a
+    precondition here rather than a convention callers must remember."""
+    if not findings:
+        return {"error": "no findings supplied"}
+
+    for i, raw in enumerate(findings):
+        for field in ("title", "content"):
+            if not raw.get(field):
+                return {"error": f"finding[{i}] is missing required field {field!r}"}
+        if not raw.get("provenance"):
+            return {
+                "error": (
+                    f"finding[{i}] has no provenance — every finding must cite at least "
+                    "one source url, e.g. provenance=[{'url': 'https://…'}]"
+                )
+            }
+
+    store = get_store(ctx.access_token, org_id=ctx.org_id)
+    was_archived = _clear_archive(store, ctx)
+
+    exp_id = store.create_exploration(ctx.org_id, ctx.kb_id, "agent-ingest")
+    try:
+        candidates = [_finding_from_raw(ctx, exp_id, raw) for raw in findings]
+        outcome = await resolve_and_persist(ctx, store, candidates, get_config())
+        ids = outcome.affected_finding_ids
+        store.update_exploration(
+            exp_id, status="completed", completed_at=_now_iso(), finding_ids=ids
+        )
+        syn_status = await maybe_rebuild_synopsis(ctx.kb_id, org_id=ctx.org_id, store=store)
+        schedule_kg_update(ctx, ids, store=store)
+    except Exception:
+        store.update_exploration(exp_id, status="failed", completed_at=_now_iso())
+        raise
+
+    return {
+        "exploration_id": exp_id,
+        "status": "completed",
+        "finding_ids": ids,
+        "count": len(ids),
+        "synopsis": syn_status,
+        "unarchived": was_archived,
+    }
+
+
 @mcp.tool()
 async def delapan_explore(
     project: str, kb: str, prompt: str | None = None, max_findings: int | None = None
@@ -291,6 +358,31 @@ async def delapan_explore(
     except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
         return {"error": f"KB not found ({project}/{kb}): {exc}"}
     return await _explore_impl(ctx, prompt, max_findings)
+
+
+@mcp.tool()
+async def delapan_add_findings(project: str, kb: str, findings: list[dict]) -> dict:
+    """Persist findings you researched yourself into the named KB (creating the
+    project/KB on demand). Use this instead of ``delapan_explore`` when you have
+    already searched and read the sources with your own tools — it runs no LLM
+    call of its own, so it is far cheaper and returns immediately.
+
+    Each item in ``findings`` requires:
+      ``title``       short claim-shaped headline
+      ``content``     dict of structured fields (the claim body)
+      ``provenance``  non-empty list of ``{"url": ..., "title": ...}`` — the
+                      sources you actually read. A finding without provenance is
+                      rejected; ungrounded claims never enter the KB.
+    Optional: ``category`` (default "fact"), ``confidence`` 0-1, ``tags``,
+    ``entity_type``.
+
+    Findings resolve against existing ones (ADD/UPDATE/NOOP/SUPERSEDE), so
+    re-submitting overlapping material refines rather than duplicates."""
+    try:
+        ctx = resolve_tenant(project, kb, create=True)
+    except Exception as exc:  # noqa: BLE001 — clean error for a missing project/KB
+        return {"error": f"KB not found ({project}/{kb}): {exc}"}
+    return await _add_findings_impl(ctx, findings)
 
 
 # --- Curation backlog --------------------------------------------------------
