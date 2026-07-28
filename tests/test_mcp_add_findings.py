@@ -135,3 +135,52 @@ async def test_provenance_survives_persistence(ctx_and_store):
     assert url in [p.get("url") for p in row["provenance"]], (
         "provenance url was dropped between the tool and the store"
     )
+
+
+@pytest.mark.asyncio
+async def test_reingest_updates_instead_of_duplicating(store, monkeypatch):
+    """Second submission of the same claim resolves as UPDATE — no duplicate row."""
+    org, pid = store.resolve_project("dedupproj", create=True)
+    kb = store.resolve_kb(org, pid, "main", create=True)
+    ctx = SimpleNamespace(org_id=org, kb_id=kb, project_id=pid, access_token=None)
+
+    async def _fake_embed(texts):
+        return [[0.01] * 1536 for _ in texts]
+
+    async def _no_synopsis(kb_id, org_id=None, store=None):
+        return "skipped"
+
+    monkeypatch.setattr("delapan.core.memory.persist.embed_batch", _fake_embed)
+    monkeypatch.setattr(server_mod, "maybe_rebuild_synopsis", _no_synopsis)
+    monkeypatch.setattr(server_mod, "schedule_kg_update", lambda *a, **k: None)
+    monkeypatch.setattr(server_mod, "get_store", lambda *a, **k: store)
+
+    async def _all_add(store_, kb_, cands, embs, mcfg):
+        return [
+            ResolutionDecision(candidate_index=i, op=ResolutionOp.ADD) for i in range(len(cands))
+        ]
+
+    monkeypatch.setattr("delapan.core.memory.persist.resolve", _all_add)
+    monkeypatch.setenv("DLP_MEMORY__ENABLED", "true")
+    from delapan.core.config import get_config
+
+    get_config.cache_clear()
+    try:
+        out = await server_mod._add_findings_impl(ctx, [_raw("gateway is zero markup")])
+        assert store.count_findings(kb) == 1
+        existing_id = out["finding_ids"][0]
+
+        # Second pass — resolver says UPDATE against the existing row.
+        async def _all_update(store_, kb_, cands, embs, mcfg):
+            return [
+                ResolutionDecision(
+                    candidate_index=0, op=ResolutionOp.UPDATE, target_finding_id=existing_id
+                )
+            ]
+
+        monkeypatch.setattr("delapan.core.memory.persist.resolve", _all_update)
+        await server_mod._add_findings_impl(ctx, [_raw("gateway is zero markup")])
+
+        assert store.count_findings(kb) == 1, "UPDATE must not create a second row"
+    finally:
+        get_config.cache_clear()
